@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
@@ -42,8 +42,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '../components/ui/alert-dialog';
-import { Edit, Eye, RefreshCw, Search, Trash2, UserPlus } from 'lucide-react';
-import { Warrant } from '../data/mockData';
+import { CheckCircle2, Edit, Eye, RefreshCw, Search, Trash2, UserPlus } from 'lucide-react';
+import { Warrant } from '../data/models';
 import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
 import { toast } from 'sonner';
@@ -56,7 +56,11 @@ export function WarrantList() {
     updateWarrant,
     deleteWarrant: deleteWarrantAction,
     assignWarrant: assignWarrantAction,
+    approveWarrant,
     updateWarrantStatus,
+    currentUser,
+    backendMessage,
+    isBackendReady,
   } = useSystem();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -83,6 +87,7 @@ export function WarrantList() {
   const [nextAction, setNextAction] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
+  const canManageWarrants = currentUser?.role === 'Admin';
 
   const officers = users.filter(u => u.role === 'Warrant Officer' && u.status === 'Active');
   const barangays = Array.from(new Set(warrants.map((w) => w.barangay))).sort();
@@ -132,6 +137,15 @@ export function WarrantList() {
       ),
     },
     {
+      accessorKey: 'approvalStatus',
+      header: 'Approval',
+      cell: ({ row }) => (
+        <Badge className={approvalBadgeClass(row.original.approvalStatus)}>
+          {row.original.approvalStatus}
+        </Badge>
+      ),
+    },
+    {
       accessorKey: 'assignedOfficer',
       header: 'Assigned Officer',
       cell: ({ row }) => row.original.assignedOfficer || 'Not assigned',
@@ -147,26 +161,39 @@ export function WarrantList() {
         const warrant = row.original;
         return (
           <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={() => openEditDialog(warrant)}>
-              <Edit className="w-4 h-4" />
-            </Button>
             <Button size="sm" variant="outline" onClick={() => setViewWarrant(warrant)}>
               <Eye className="w-4 h-4" />
             </Button>
-            <Button size="sm" variant="outline" onClick={() => openAssignDialog(warrant)}>
-              <UserPlus className="w-4 h-4" />
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => setUpdateStatusWarrant(warrant)}>
-              <RefreshCw className="w-4 h-4" />
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => setDeleteDialogWarrant(warrant)}>
-              <Trash2 className="w-4 h-4" />
-            </Button>
+            {canManageWarrants && (
+              <Button size="sm" variant="outline" onClick={() => openEditDialog(warrant)} disabled={!isBackendReady}>
+                <Edit className="w-4 h-4" />
+              </Button>
+            )}
+            {canManageWarrants && warrant.approvalStatus !== 'Approved' && (
+              <Button size="sm" variant="outline" onClick={() => handleApprove(warrant.id)} disabled={!isBackendReady}>
+                <CheckCircle2 className="w-4 h-4" />
+              </Button>
+            )}
+            {canManageWarrants && (
+              <Button size="sm" variant="outline" onClick={() => openAssignDialog(warrant)} disabled={!isBackendReady}>
+                <UserPlus className="w-4 h-4" />
+              </Button>
+            )}
+            {canManageWarrants && (
+              <Button size="sm" variant="outline" onClick={() => openStatusDialog(warrant)} disabled={!isBackendReady}>
+                <RefreshCw className="w-4 h-4" />
+              </Button>
+            )}
+            {canManageWarrants && (
+              <Button size="sm" variant="outline" onClick={() => setDeleteDialogWarrant(warrant)} disabled={!isBackendReady}>
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            )}
           </div>
         );
       },
     },
-  ], [paginatedWarrants]);
+  ], [canManageWarrants, isBackendReady, paginatedWarrants]);
 
   const table = useReactTable({
     data: paginatedWarrants,
@@ -184,25 +211,78 @@ export function WarrantList() {
     }
   };
 
-  const handleAssign = () => {
+  const approvalBadgeClass = (approvalStatus: Warrant['approvalStatus']) => {
+    switch (approvalStatus) {
+      case 'Approved':
+        return 'bg-emerald-100 text-emerald-700';
+      case 'For Approval':
+      default:
+        return 'bg-amber-100 text-amber-800';
+    }
+  };
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter, barangayFilter, offenseFilter, fromDate, toDate]);
+
+  useEffect(() => {
+    if (currentPage > totalPages && totalPages > 0) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  const handleApprove = async (warrantId: string) => {
+    if (!canManageWarrants) {
+      toast.error('Only admins can approve warrant submissions.');
+      return;
+    }
+    const result = await approveWarrant(warrantId);
+    if (!result.ok) {
+      toast.error(result.message || 'Unable to approve warrant.');
+      return;
+    }
+    toast.success(result.message || 'Warrant approved successfully.');
+  };
+
+  const handleAssign = async () => {
+    if (!canManageWarrants) {
+      toast.error('Only admins can assign warrants.');
+      return;
+    }
     if (!assignDialogWarrant || !selectedOfficer || !dateAssigned) return;
-    assignWarrantAction({
+    if (assignDialogWarrant.approvalStatus !== 'Approved') {
+      toast.error('Approve the warrant before assigning it.');
+      return;
+    }
+    const result = await assignWarrantAction({
       warrantId: assignDialogWarrant.id,
       officerName: selectedOfficer,
       dateAssigned,
       notes: assignmentNotes,
     });
-    toast.success(`Warrant assigned to ${selectedOfficer}`);
+    if (!result.ok) {
+      toast.error(result.message || 'Unable to assign warrant.');
+      return;
+    }
+    toast.success(result.message || `Warrant assigned to ${selectedOfficer}`);
     setAssignDialogWarrant(null);
     setSelectedOfficer('');
     setDateAssigned(new Date().toISOString().slice(0, 10));
     setAssignmentNotes('');
   };
 
-  const handleStatusUpdate = () => {
+  const handleStatusUpdate = async () => {
+    if (!canManageWarrants) {
+      toast.error('Only admins can update warrant status.');
+      return;
+    }
     if (!updateStatusWarrant || !newStatus) return;
+    if (updateStatusWarrant.approvalStatus !== 'Approved') {
+      toast.error('Approve the warrant before updating its status.');
+      return;
+    }
 
-    updateWarrantStatus({
+    const result = await updateWarrantStatus({
       warrantId: updateStatusWarrant.id,
       status: newStatus as Warrant['status'],
       served:
@@ -222,7 +302,12 @@ export function WarrantList() {
           : undefined,
     });
 
-    toast.success(`Warrant status updated to ${newStatus}`);
+    if (!result.ok) {
+      toast.error(result.message || 'Unable to update warrant status.');
+      return;
+    }
+
+    toast.success(result.message || `Warrant status updated to ${newStatus}`);
     setUpdateStatusWarrant(null);
     setNewStatus('');
     setDateServed('');
@@ -232,31 +317,69 @@ export function WarrantList() {
     setNextAction('');
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
+    if (!canManageWarrants) {
+      toast.error('Only admins can delete warrants.');
+      return;
+    }
     if (!deleteDialogWarrant) return;
-    deleteWarrantAction(deleteDialogWarrant.id);
-    toast.success('Warrant deleted successfully');
+    const result = await deleteWarrantAction(deleteDialogWarrant.id);
+    if (!result.ok) {
+      toast.error(result.message || 'Unable to delete warrant.');
+      return;
+    }
+    toast.success(result.message || 'Warrant deleted successfully');
     setDeleteDialogWarrant(null);
   };
 
-  const handleEdit = () => {
+  const handleEdit = async () => {
+    if (!canManageWarrants) {
+      toast.error('Only admins can edit warrants.');
+      return;
+    }
     if (!editWarrant) return;
-    updateWarrant(editWarrant.id, editForm);
-    toast.success('Warrant details updated');
+    const result = await updateWarrant(editWarrant.id, editForm);
+    if (!result.ok) {
+      toast.error(result.message || 'Unable to update warrant.');
+      return;
+    }
+    toast.success(result.message || 'Warrant details updated');
     setEditWarrant(null);
     setEditForm({});
   };
 
   const openEditDialog = (warrant: Warrant) => {
+    if (!canManageWarrants) {
+      toast.error('Only admins can edit warrants.');
+      return;
+    }
     setEditWarrant(warrant);
     setEditForm({ ...warrant });
   };
 
   const openAssignDialog = (warrant: Warrant) => {
+    if (!canManageWarrants) {
+      toast.error('Only admins can assign warrants.');
+      return;
+    }
     setAssignDialogWarrant(warrant);
     setSelectedOfficer(warrant.assignedOfficer || '');
     setDateAssigned(warrant.dateAssigned || new Date().toISOString().slice(0, 10));
     setAssignmentNotes(warrant.assignmentNotes || '');
+  };
+
+  const openStatusDialog = (warrant: Warrant) => {
+    if (!canManageWarrants) {
+      toast.error('Only admins can update warrant status.');
+      return;
+    }
+    setUpdateStatusWarrant(warrant);
+    setNewStatus(warrant.status);
+    setDateServed(warrant.dateServed || '');
+    setPlaceServed(warrant.placeServed || '');
+    setServedRemarks(warrant.servedRemarks || '');
+    setReasonUnserved(warrant.reasonUnserved || '');
+    setNextAction(warrant.nextAction || '');
   };
 
   return (
@@ -265,6 +388,12 @@ export function WarrantList() {
         <h1 className="text-2xl font-bold text-gray-900">Warrant Records</h1>
         <p className="text-gray-600">View and manage all warrant records</p>
       </div>
+
+      {backendMessage && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {backendMessage}
+        </div>
+      )}
 
       {/* Filters */}
       <Card>
@@ -332,6 +461,7 @@ export function WarrantList() {
                   setStatusFilter('all');
                   setBarangayFilter('all');
                   setOffenseFilter('all');
+                  setSearchTerm('');
                   setFromDate('');
                   setToDate('');
                 }}
@@ -385,17 +515,25 @@ export function WarrantList() {
                       <p className="font-semibold text-gray-900">{warrant.name}</p>
                       <p className="text-sm text-gray-600">{warrant.caseNumber}</p>
                     </div>
-                    <Badge className={statusBadgeClass(warrant.status)}>{warrant.status}</Badge>
+                    <div className="flex flex-col items-end gap-2">
+                      <Badge className={approvalBadgeClass(warrant.approvalStatus)}>{warrant.approvalStatus}</Badge>
+                      <Badge className={statusBadgeClass(warrant.status)}>{warrant.status}</Badge>
+                    </div>
                   </div>
                   <p className="text-sm text-gray-600">Offense: {warrant.offense}</p>
                   <p className="text-sm text-gray-600">Officer: {warrant.assignedOfficer || 'Not assigned'}</p>
                   <p className="text-sm text-gray-600">Issued: {warrant.dateIssued}</p>
-                  <div className="pt-1 grid grid-cols-5 gap-2">
-                    <Button size="sm" variant="outline" onClick={() => openEditDialog(warrant)}><Edit className="w-4 h-4" /></Button>
+                  <div className={`pt-1 grid gap-2 ${canManageWarrants ? 'grid-cols-6' : 'grid-cols-1'}`}>
                     <Button size="sm" variant="outline" onClick={() => setViewWarrant(warrant)}><Eye className="w-4 h-4" /></Button>
-                    <Button size="sm" variant="outline" onClick={() => openAssignDialog(warrant)}><UserPlus className="w-4 h-4" /></Button>
-                    <Button size="sm" variant="outline" onClick={() => setUpdateStatusWarrant(warrant)}><RefreshCw className="w-4 h-4" /></Button>
-                    <Button size="sm" variant="outline" onClick={() => setDeleteDialogWarrant(warrant)}><Trash2 className="w-4 h-4" /></Button>
+                    {canManageWarrants && <Button size="sm" variant="outline" onClick={() => openEditDialog(warrant)} disabled={!isBackendReady}><Edit className="w-4 h-4" /></Button>}
+                    {canManageWarrants && warrant.approvalStatus !== 'Approved' ? (
+                      <Button size="sm" variant="outline" onClick={() => handleApprove(warrant.id)} disabled={!isBackendReady}><CheckCircle2 className="w-4 h-4" /></Button>
+                    ) : canManageWarrants ? (
+                      <div />
+                    ) : null}
+                    {canManageWarrants && <Button size="sm" variant="outline" onClick={() => openAssignDialog(warrant)} disabled={!isBackendReady}><UserPlus className="w-4 h-4" /></Button>}
+                    {canManageWarrants && <Button size="sm" variant="outline" onClick={() => openStatusDialog(warrant)} disabled={!isBackendReady}><RefreshCw className="w-4 h-4" /></Button>}
+                    {canManageWarrants && <Button size="sm" variant="outline" onClick={() => setDeleteDialogWarrant(warrant)} disabled={!isBackendReady}><Trash2 className="w-4 h-4" /></Button>}
                   </div>
                 </CardContent>
               </Card>
@@ -409,7 +547,7 @@ export function WarrantList() {
           {/* Pagination */}
           <div className="flex items-center justify-between mt-4">
             <p className="text-sm text-gray-600">
-              Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredWarrants.length)} of {filteredWarrants.length} warrants
+              Showing {filteredWarrants.length === 0 ? 0 : ((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredWarrants.length)} of {filteredWarrants.length} warrants
             </p>
             <div className="flex gap-2">
               <Button
@@ -475,7 +613,7 @@ export function WarrantList() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditWarrant(null)}>Cancel</Button>
-            <Button onClick={handleEdit}>Save Changes</Button>
+            <Button onClick={handleEdit} disabled={!isBackendReady}>Save Changes</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -518,6 +656,12 @@ export function WarrantList() {
                   <p className="font-medium">{viewWarrant.dateIssued}</p>
                 </div>
                 <div>
+                  <p className="text-sm text-gray-600">Approval Status</p>
+                  <Badge className={approvalBadgeClass(viewWarrant.approvalStatus)}>
+                    {viewWarrant.approvalStatus}
+                  </Badge>
+                </div>
+                <div>
                   <p className="text-sm text-gray-600">Status</p>
                   <Badge className={statusBadgeClass(viewWarrant.status)}>
                     {viewWarrant.status}
@@ -530,6 +674,18 @@ export function WarrantList() {
                 <div>
                   <p className="text-sm text-gray-600">Assigned Officer</p>
                   <p className="font-medium">{viewWarrant.assignedOfficer}</p>
+                </div>
+                <div className="col-span-2">
+                  <p className="text-sm text-gray-600">Submitted By</p>
+                  <p className="font-medium">{viewWarrant.submittedBy || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Approved By</p>
+                  <p className="font-medium">{viewWarrant.approvedBy || 'Not yet approved'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Approved At</p>
+                  <p className="font-medium">{viewWarrant.approvedAt || 'Not yet approved'}</p>
                 </div>
                 <div className="col-span-2">
                   <p className="text-sm text-gray-600">Address</p>
@@ -592,7 +748,7 @@ export function WarrantList() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAssignDialogWarrant(null)}>Cancel</Button>
-            <Button onClick={handleAssign} disabled={!selectedOfficer || !dateAssigned}>Assign</Button>
+            <Button onClick={handleAssign} disabled={!isBackendReady || !selectedOfficer || !dateAssigned}>Assign</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -652,7 +808,7 @@ export function WarrantList() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setUpdateStatusWarrant(null)}>Cancel</Button>
-            <Button onClick={handleStatusUpdate} disabled={!newStatus}>Update</Button>
+            <Button onClick={handleStatusUpdate} disabled={!isBackendReady || !newStatus}>Update</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -668,7 +824,7 @@ export function WarrantList() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setDeleteDialogWarrant(null)}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700">
+            <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700" disabled={!isBackendReady}>
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>

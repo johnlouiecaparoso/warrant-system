@@ -32,19 +32,28 @@ interface WarrantFormData {
 
 export function WarrantEncode() {
   const navigate = useNavigate();
-  const { addWarrant, users } = useSystem();
+  const { addWarrant, users, currentUser, backendMessage, isBackendReady } = useSystem();
   const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<WarrantFormData>();
   const [selectedOfficer, setSelectedOfficer] = useState('');
 
   const officers = users.filter(u => u.role === 'Warrant Officer' && u.status === 'Active');
 
-  const onSubmit = (data: WarrantFormData) => {
-    addWarrant({
+  const onSubmit = async (data: WarrantFormData) => {
+    const result = await addWarrant({
       ...data,
       dateAssigned: new Date().toISOString().slice(0, 10),
       assignmentNotes: data.remarks,
     });
-    toast.success('Warrant successfully encoded!');
+    if (!result.ok) {
+      toast.error(result.message || 'Unable to save warrant.');
+      return;
+    }
+    toast.success(
+      result.message ||
+        (currentUser?.role === 'Admin'
+          ? 'Warrant successfully encoded and approved.'
+          : 'Warrant submitted successfully and is waiting for admin approval.'),
+    );
     reset();
     setSelectedOfficer('');
   };
@@ -53,8 +62,18 @@ export function WarrantEncode() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Warrant Encoding</h1>
-        <p className="text-gray-600">Add new warrant information to the system</p>
+        <p className="text-gray-600">
+          {currentUser?.role === 'Admin'
+            ? 'Add new warrant information to the system'
+            : 'Submit new warrant information for admin approval'}
+        </p>
       </div>
+
+      {backendMessage && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {backendMessage}
+        </div>
+      )}
 
       <Card>
         <CardHeader>
@@ -214,7 +233,7 @@ export function WarrantEncode() {
 
             {/* Action Buttons */}
             <div className="flex gap-3 pt-4">
-              <Button type="submit" className="bg-blue-600 hover:bg-blue-700">
+              <Button type="submit" className="bg-blue-600 hover:bg-blue-700" disabled={!isBackendReady}>
                 Save Warrant
               </Button>
               <Button type="button" variant="outline" onClick={() => {

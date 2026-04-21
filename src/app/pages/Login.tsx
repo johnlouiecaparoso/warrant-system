@@ -1,43 +1,74 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
-import { Building2, Shield } from 'lucide-react';
+import { Building2, Eye, EyeOff } from 'lucide-react';
 import { useSystem } from '../context/SystemContext';
 import { toast } from 'sonner';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../components/ui/dialog';
 
 export function Login() {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetError, setResetError] = useState('');
+  const [resetSuccess, setResetSuccess] = useState('');
   const navigate = useNavigate();
-  const { login } = useSystem();
+  const { login, resetPassword, backendMessage, isBackendReady } = useSystem();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const result = await login(username, password);
+    const result = await login(email, password);
 
     if (result.ok) {
       navigate('/');
     } else {
-      setError(result.message || 'Invalid username or password');
+      setError(result.message || 'Invalid email or password');
     }
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setResetError('');
+    setResetSuccess('');
+
+    const result = await resetPassword(resetEmail);
+    if (!result.ok) {
+      setResetError(result.message || 'Password reset request failed.');
+      return;
+    }
+
+    setResetSuccess(result.message || 'Password reset email sent.');
+    toast.success(result.message || 'Password reset email sent.');
   };
 
   return (
     <div className="min-h-screen relative flex items-center justify-center p-4 bg-[#0b1f3a]">
       <div
         aria-hidden
-        className="absolute inset-0 bg-cover bg-center opacity-35 bg-[url('https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=1600&q=80')]"
+        className="absolute inset-0 bg-cover bg-center opacity-35"
+        style={{ backgroundImage: "url('/img/bg.jpg?v=2')" }}
       />
       <div aria-hidden className="absolute inset-0 bg-[radial-gradient(circle_at_top,#3b82f64d,transparent_50%)]" />
       <div className="w-full max-w-md">
         <div className="relative bg-white/95 backdrop-blur rounded-xl shadow-2xl p-8 border border-white/40">
           <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-20 h-20 bg-blue-700 rounded-full mb-4">
-              <Shield className="w-12 h-12 text-white" />
-            </div>
+            <img
+              src="/img/logo.jpg?v=2"
+              alt="Warrant system logo"
+              className="mx-auto mb-4 h-20 w-20 rounded-full object-cover shadow-md"
+            />
             <h1 className="text-2xl font-bold text-gray-900 mb-2">
               Butuan City Police Station 1
             </h1>
@@ -46,16 +77,16 @@ export function Login() {
 
           <form onSubmit={handleLogin} className="space-y-6">
             <div>
-              <Label htmlFor="username">Username</Label>
+              <Label htmlFor="email">Email</Label>
               <Input
-                id="username"
-                type="text"
-                value={username}
+                id="email"
+                type="email"
+                value={email}
                 onChange={(e) => {
-                  setUsername(e.target.value);
+                  setEmail(e.target.value);
                   setError('');
                 }}
-                placeholder="Enter your username"
+                placeholder="Enter your email"
                 className="mt-1"
                 required
               />
@@ -63,18 +94,28 @@ export function Login() {
 
             <div>
               <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => {
-                  setPassword(e.target.value);
-                  setError('');
-                }}
-                placeholder="Enter your password"
-                className="mt-1"
-                required
-              />
+              <div className="relative mt-1">
+                <Input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    setError('');
+                  }}
+                  placeholder="Enter your password"
+                  className="pr-10"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  className="absolute inset-y-0 right-0 flex items-center px-3 text-gray-500 hover:text-gray-700"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
             </div>
 
             {error && (
@@ -83,14 +124,25 @@ export function Login() {
               </div>
             )}
 
-            <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700">
+            {backendMessage && (
+              <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg text-sm">
+                {backendMessage}
+              </div>
+            )}
+
+            <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700" disabled={!isBackendReady}>
               Login
             </Button>
 
             <div className="text-center">
               <button
                 type="button"
-                onClick={() => toast.info('Contact system administrator to reset your password.')}
+                onClick={() => {
+                  setResetEmail(email);
+                  setResetError('');
+                  setResetSuccess('');
+                  setForgotOpen(true);
+                }}
                 className="text-sm text-blue-600 hover:underline"
               >
                 Forgot password?
@@ -98,8 +150,9 @@ export function Login() {
             </div>
           </form>
 
-          <div className="mt-6 pt-6 border-t border-gray-200 text-center text-xs text-gray-500">
-            <p>Demo accounts: admin / admin, rsantos / commander123, pgarcia / officer123</p>
+          <div className="mt-6 pt-6 border-t border-gray-200 text-center text-sm">
+            <span className="text-gray-600">No account yet? </span>
+            <Link to="/register" className="text-blue-600 hover:underline">Create an account</Link>
           </div>
         </div>
 
@@ -108,6 +161,48 @@ export function Login() {
           <p>&copy; 2026 Philippine National Police - Butuan City Station 1</p>
         </div>
       </div>
+
+      <Dialog open={forgotOpen} onOpenChange={setForgotOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reset Password</DialogTitle>
+            <DialogDescription>
+              Enter your account email and we&apos;ll send you a secure password reset link.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleResetPassword} className="space-y-4">
+            <div>
+              <Label htmlFor="resetEmail">Email</Label>
+              <Input
+                id="resetEmail"
+                type="email"
+                value={resetEmail}
+                onChange={(e) => {
+                  setResetEmail(e.target.value);
+                  setResetError('');
+                  setResetSuccess('');
+                }}
+                className="mt-1"
+                required
+              />
+            </div>
+            {resetError && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {resetError}
+              </div>
+            )}
+            {resetSuccess && (
+              <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+                {resetSuccess}
+              </div>
+            )}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setForgotOpen(false)}>Close</Button>
+              <Button type="submit" disabled={!isBackendReady}>Send Reset Link</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import {
@@ -37,71 +37,63 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
-import { UserPlus, Edit, UserX } from 'lucide-react';
-import { User } from '../data/mockData';
+import { Edit, UserX } from 'lucide-react';
+import { User } from '../data/models';
 import { toast } from 'sonner';
 import { useSystem } from '../context/SystemContext';
 
 export function UserManagement() {
   const {
     users,
-    addUser: addUserAction,
     editUser: editUserAction,
     deactivateUser: deactivateUserAction,
+    backendMessage,
+    isBackendReady,
   } = useSystem();
   const [search, setSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editUser, setEditUser] = useState<User | null>(null);
   const [deactivateUser, setDeactivateUser] = useState<User | null>(null);
   const [formData, setFormData] = useState({
     fullName: '',
-    username: '',
-    password: '',
-    role: '',
+    email: '',
+    role: 'Warrant Officer',
     status: 'Active'
   });
 
   const itemsPerPage = 8;
 
   const filteredUsers = users.filter((user) =>
-    `${user.fullName} ${user.username} ${user.role}`.toLowerCase().includes(search.toLowerCase()),
+    `${user.fullName} ${user.email} ${user.role}`.toLowerCase().includes(search.toLowerCase()),
   );
 
   const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
   const paginatedUsers = filteredUsers.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
-  const handleAddUser = () => {
-    addUserAction({
-      fullName: formData.fullName,
-      username: formData.username,
-      password: formData.password,
-      role: formData.role as User['role'],
-      status: formData.status as User['status'],
-    });
-    toast.success('User added successfully');
-    setAddDialogOpen(false);
-    setFormData({ fullName: '', username: '', password: '', role: '', status: 'Active' });
-  };
-
-  const handleEditUser = () => {
+  const handleEditUser = async () => {
     if (!editUser) return;
-    editUserAction(editUser.id, {
+    const result = await editUserAction(editUser.id, {
       fullName: formData.fullName,
-      username: formData.username,
-      password: formData.password,
       role: formData.role as User['role'],
       status: formData.status as User['status'],
     });
-    toast.success('User updated successfully');
+    if (!result.ok) {
+      toast.error(result.message || 'Unable to update user.');
+      return;
+    }
+    toast.success(result.message || 'User updated successfully');
     setEditUser(null);
-    setFormData({ fullName: '', username: '', password: '', role: '', status: 'Active' });
+    setFormData({ fullName: '', email: '', role: 'Warrant Officer', status: 'Active' });
   };
 
-  const handleDeactivateUser = () => {
+  const handleDeactivateUser = async () => {
     if (!deactivateUser) return;
-    deactivateUserAction(deactivateUser.id);
-    toast.success(`User ${deactivateUser?.fullName} deactivated`);
+    const result = await deactivateUserAction(deactivateUser.id);
+    if (!result.ok) {
+      toast.error(result.message || 'Unable to deactivate user.');
+      return;
+    }
+    toast.success(result.message || `User ${deactivateUser?.fullName} deactivated`);
     setDeactivateUser(null);
   };
 
@@ -109,8 +101,7 @@ export function UserManagement() {
     setEditUser(user);
     setFormData({
       fullName: user.fullName,
-      username: user.username,
-      password: '',
+      email: user.email,
       role: user.role,
       status: user.status
     });
@@ -118,21 +109,20 @@ export function UserManagement() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
-          <p className="text-gray-600">Manage system users and their roles</p>
-        </div>
-        <Button onClick={() => setAddDialogOpen(true)} className="bg-blue-600 hover:bg-blue-700">
-          <UserPlus className="w-4 h-4 mr-2" />
-          Add User
-        </Button>
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
+        <p className="text-gray-600">Manage registered users and their access</p>
       </div>
 
-      {/* Users Table */}
+      {backendMessage && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {backendMessage}
+        </div>
+      )}
+
       <Card>
         <CardContent className="pt-6">
-          <div className="mb-4 flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
+          <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <Input
               placeholder="Search users..."
               value={search}
@@ -142,13 +132,15 @@ export function UserManagement() {
               }}
               className="w-full md:w-80"
             />
-            <p className="text-sm text-gray-500">{filteredUsers.length} users found</p>
+            <p className="text-sm text-gray-500">
+              New accounts now register securely through the public Register page.
+            </p>
           </div>
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Full Name</TableHead>
-                <TableHead>Username</TableHead>
+                <TableHead>Email</TableHead>
                 <TableHead>Role</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Actions</TableHead>
@@ -158,7 +150,7 @@ export function UserManagement() {
               {paginatedUsers.map((user) => (
                 <TableRow key={user.id}>
                   <TableCell className="font-medium">{user.fullName}</TableCell>
-                  <TableCell>{user.username}</TableCell>
+                  <TableCell>{user.email}</TableCell>
                   <TableCell>{user.role}</TableCell>
                   <TableCell>
                     <Badge className={user.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}>
@@ -171,6 +163,7 @@ export function UserManagement() {
                         size="sm"
                         variant="outline"
                         onClick={() => openEditDialog(user)}
+                        disabled={!isBackendReady}
                       >
                         <Edit className="w-4 h-4" />
                       </Button>
@@ -178,7 +171,7 @@ export function UserManagement() {
                         size="sm"
                         variant="outline"
                         onClick={() => setDeactivateUser(user)}
-                        disabled={user.status === 'Inactive'}
+                        disabled={!isBackendReady || user.status === 'Inactive'}
                       >
                         <UserX className="w-4 h-4" />
                       </Button>
@@ -208,77 +201,12 @@ export function UserManagement() {
         </CardContent>
       </Card>
 
-      {/* Add User Dialog */}
-      <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add New User</DialogTitle>
-            <DialogDescription>
-              Create a new user account for the system
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="fullName">Full Name</Label>
-              <Input
-                id="fullName"
-                value={formData.fullName}
-                onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-                placeholder="Enter full name"
-                className="mt-1"
-              />
-            </div>
-            <div>
-              <Label htmlFor="username">Username</Label>
-              <Input
-                id="username"
-                value={formData.username}
-                onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                placeholder="Enter username"
-                className="mt-1"
-              />
-            </div>
-            <div>
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                placeholder="Enter password"
-                className="mt-1"
-              />
-            </div>
-            <div>
-              <Label htmlFor="role">Role</Label>
-              <Select value={formData.role} onValueChange={(value) => setFormData({ ...formData, role: value })}>
-                <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="Select role" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Admin">Admin</SelectItem>
-                  <SelectItem value="Warrant Officer">Warrant Officer</SelectItem>
-                  <SelectItem value="Station Commander">Station Commander</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAddDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleAddUser} disabled={!formData.fullName || !formData.username || !formData.password || !formData.role}>
-              Add User
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit User Dialog */}
       <Dialog open={!!editUser} onOpenChange={() => setEditUser(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit User</DialogTitle>
             <DialogDescription>
-              Update user information
+              Update role, status, and profile name. Email and password are managed through Supabase Auth.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -292,23 +220,13 @@ export function UserManagement() {
               />
             </div>
             <div>
-              <Label htmlFor="editUsername">Username</Label>
+              <Label htmlFor="editEmail">Email</Label>
               <Input
-                id="editUsername"
-                value={formData.username}
-                onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                id="editEmail"
+                type="email"
+                value={formData.email}
                 className="mt-1"
-              />
-            </div>
-            <div>
-              <Label htmlFor="editPassword">New Password (leave blank to keep current)</Label>
-              <Input
-                id="editPassword"
-                type="password"
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                placeholder="Enter new password"
-                className="mt-1"
+                disabled
               />
             </div>
             <div>
@@ -320,7 +238,6 @@ export function UserManagement() {
                 <SelectContent>
                   <SelectItem value="Admin">Admin</SelectItem>
                   <SelectItem value="Warrant Officer">Warrant Officer</SelectItem>
-                  <SelectItem value="Station Commander">Station Commander</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -339,12 +256,11 @@ export function UserManagement() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditUser(null)}>Cancel</Button>
-            <Button onClick={handleEditUser}>Update User</Button>
+            <Button onClick={handleEditUser} disabled={!isBackendReady}>Update User</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Deactivate User Dialog */}
       <AlertDialog open={!!deactivateUser} onOpenChange={() => setDeactivateUser(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>

@@ -14,7 +14,7 @@ import {
 } from '../components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Search as SearchIcon } from 'lucide-react';
-import { Warrant } from '../data/mockData';
+import { Warrant } from '../data/models';
 import { useSystem } from '../context/SystemContext';
 import { useLocation } from 'react-router-dom';
 

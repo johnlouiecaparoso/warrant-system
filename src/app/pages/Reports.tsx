@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Label } from '../components/ui/label';
 import { Input } from '../components/ui/input';
@@ -19,26 +19,58 @@ import {
   TableHeader,
   TableRow,
 } from '../components/ui/table';
-import { FileText, Download, Printer, BarChart3 } from 'lucide-react';
+import { FileText, Download } from 'lucide-react';
 import { useSystem } from '../context/SystemContext';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { toast } from 'sonner';
 
+const reportTitles = {
+  'daily-served': 'Daily Served Warrants Report',
+  'monthly-served': 'Monthly Served Warrants Report',
+  pending: 'Pending Warrants Report',
+  unserved: 'Unserved Warrants Report',
+  cancelled: 'Cancelled Warrants Report',
+} as const;
+
+type ReportType = keyof typeof reportTitles;
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
 export function Reports() {
-  const { warrants } = useSystem();
-  const [reportType, setReportType] = useState('daily-served');
-  const [startDate, setStartDate] = useState('2026-04-01');
-  const [endDate, setEndDate] = useState('2026-04-21');
+  const { warrants, settings } = useSystem();
+  const today = new Date();
+  const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  const [reportType, setReportType] = useState<ReportType>('daily-served');
+  const [startDate, setStartDate] = useState(startOfMonth.toISOString().slice(0, 10));
+  const [endDate, setEndDate] = useState(today.toISOString().slice(0, 10));
+
+  const hasInvalidDateRange = startDate > endDate;
 
   const isWithinRange = (date: string) => {
-    if (!date) return false;
+    if (!date || hasInvalidDateRange) return false;
     const start = new Date(startDate);
     const end = new Date(endDate);
     const target = new Date(date);
     return target >= start && target <= end;
   };
 
-  const getFilteredWarrants = () => {
+  const filteredWarrants = useMemo(() => {
     const byRange = warrants.filter((w) => {
       if (reportType === 'daily-served' || reportType === 'monthly-served') {
         return isWithinRange(w.dateServed || w.dateIssued);
@@ -49,42 +81,50 @@ export function Reports() {
     switch (reportType) {
       case 'daily-served':
       case 'monthly-served':
-        return byRange.filter(w => w.status === 'Served');
+        return byRange.filter((w) => w.status === 'Served');
       case 'pending':
-        return byRange.filter(w => w.status === 'Pending');
+        return byRange.filter((w) => w.status === 'Pending');
       case 'unserved':
-        return byRange.filter(w => w.status === 'Unserved');
+        return byRange.filter((w) => w.status === 'Unserved');
       case 'cancelled':
-        return byRange.filter(w => w.status === 'Cancelled');
+        return byRange.filter((w) => w.status === 'Cancelled');
       default:
         return byRange;
     }
-  };
-
-  const filteredWarrants = getFilteredWarrants();
+  }, [hasInvalidDateRange, reportType, warrants, startDate, endDate]);
 
   const chartData = [
-    { id: 'pending', status: 'Pending', count: filteredWarrants.filter(w => w.status === 'Pending').length },
-    { id: 'served', status: 'Served', count: filteredWarrants.filter(w => w.status === 'Served').length },
-    { id: 'unserved', status: 'Unserved', count: filteredWarrants.filter(w => w.status === 'Unserved').length },
-    { id: 'cancelled', status: 'Cancelled', count: filteredWarrants.filter(w => w.status === 'Cancelled').length },
+    { id: 'pending', status: 'Pending', count: filteredWarrants.filter((w) => w.status === 'Pending').length },
+    { id: 'served', status: 'Served', count: filteredWarrants.filter((w) => w.status === 'Served').length },
+    { id: 'unserved', status: 'Unserved', count: filteredWarrants.filter((w) => w.status === 'Unserved').length },
+    { id: 'cancelled', status: 'Cancelled', count: filteredWarrants.filter((w) => w.status === 'Cancelled').length },
   ];
 
   const statusBadgeClass = (status: string) => {
     switch (status) {
-      case 'Pending': return 'bg-orange-100 text-orange-700';
-      case 'Served': return 'bg-green-100 text-green-700';
-      case 'Unserved': return 'bg-red-100 text-red-700';
-      case 'Cancelled': return 'bg-gray-100 text-gray-700';
-      default: return 'bg-gray-100 text-gray-700';
+      case 'Pending':
+        return 'bg-orange-100 text-orange-700';
+      case 'Served':
+        return 'bg-green-100 text-green-700';
+      case 'Unserved':
+        return 'bg-red-100 text-red-700';
+      case 'Cancelled':
+        return 'bg-gray-100 text-gray-700';
+      default:
+        return 'bg-gray-100 text-gray-700';
     }
   };
 
   const handleExportPDF = () => {
+    if (hasInvalidDateRange) {
+      toast.error('Start date must be earlier than or equal to end date.');
+      return;
+    }
+
     const html = `
       <html>
         <head>
-          <title>${reportTitles[reportType as keyof typeof reportTitles]}</title>
+          <title>${reportTitles[reportType]}</title>
           <style>
             body { font-family: Arial, sans-serif; padding: 24px; }
             table { width: 100%; border-collapse: collapse; margin-top: 12px; }
@@ -94,73 +134,107 @@ export function Reports() {
           </style>
         </head>
         <body>
-          <h1>${reportTitles[reportType as keyof typeof reportTitles]}</h1>
-          <p>Period: ${startDate} to ${endDate}</p>
+          <h1>${escapeHtml(reportTitles[reportType])}</h1>
+          <p>${escapeHtml(settings.officeName)}</p>
+          <p>Period: ${escapeHtml(startDate)} to ${escapeHtml(endDate)}</p>
           <table>
             <thead>
               <tr>
-                <th>Name</th><th>Case Number</th><th>Offense</th><th>Status</th><th>Date Issued</th><th>Officer</th>
+                <th>Name</th>
+                <th>Case Number</th>
+                <th>Offense</th>
+                <th>Status</th>
+                <th>Date Issued</th>
+                <th>Assigned Officer</th>
               </tr>
             </thead>
             <tbody>
-              ${filteredWarrants
-                .map(
-                  (w) =>
-                    `<tr><td>${w.name}</td><td>${w.caseNumber}</td><td>${w.offense}</td><td>${w.status}</td><td>${w.dateIssued}</td><td>${w.assignedOfficer}</td></tr>`,
-                )
-                .join('')}
+              ${
+                filteredWarrants
+                  .map(
+                    (w) =>
+                      `<tr>
+                        <td>${escapeHtml(w.name)}</td>
+                        <td>${escapeHtml(w.caseNumber)}</td>
+                        <td>${escapeHtml(w.offense)}</td>
+                        <td>${escapeHtml(w.status)}</td>
+                        <td>${escapeHtml(w.dateIssued)}</td>
+                        <td>${escapeHtml(w.assignedOfficer || 'Not assigned')}</td>
+                      </tr>`,
+                  )
+                  .join('') || '<tr><td colspan="6">No records found for the selected criteria.</td></tr>'
+              }
             </tbody>
           </table>
         </body>
       </html>
     `;
+
     const win = window.open('', '_blank');
     if (!win) {
       toast.error('Please allow popups to export PDF.');
       return;
     }
+
     win.document.write(html);
     win.document.close();
     win.focus();
     win.print();
-    toast.success('Print dialog opened. Choose Save as PDF.');
+    toast.success('PDF export opened. Choose Save as PDF in the print dialog.');
   };
 
   const handleExportExcel = () => {
-    const headers = ['Name', 'Case Number', 'Offense', 'Status', 'Date Issued', 'Assigned Officer'];
-    const rows = filteredWarrants.map((w) => [
-      w.name,
-      w.caseNumber,
-      w.offense,
-      w.status,
-      w.dateIssued,
-      w.assignedOfficer,
-    ]);
+    if (hasInvalidDateRange) {
+      toast.error('Start date must be earlier than or equal to end date.');
+      return;
+    }
 
-    const csv = [headers, ...rows]
-      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
+    const tableRows = filteredWarrants
+      .map(
+        (w) => `
+          <tr>
+            <td>${escapeHtml(w.name)}</td>
+            <td>${escapeHtml(w.caseNumber)}</td>
+            <td>${escapeHtml(w.offense)}</td>
+            <td>${escapeHtml(w.status)}</td>
+            <td>${escapeHtml(w.dateIssued)}</td>
+            <td>${escapeHtml(w.assignedOfficer || 'Not assigned')}</td>
+            ${reportType.includes('served') ? `<td>${escapeHtml(w.dateServed || 'N/A')}</td>` : ''}
+          </tr>`,
+      )
+      .join('');
 
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `${reportType}-${startDate}-to-${endDate}.csv`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-    toast.success('Excel-compatible CSV exported successfully.');
-  };
+    const excelHtml = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office"
+            xmlns:x="urn:schemas-microsoft-com:office:excel"
+            xmlns="http://www.w3.org/TR/REC-html40">
+        <head>
+          <meta charset="utf-8" />
+          <title>${escapeHtml(reportTitles[reportType])}</title>
+        </head>
+        <body>
+          <table border="1">
+            <tr><th colspan="${reportType.includes('served') ? 7 : 6}">${escapeHtml(reportTitles[reportType])}</th></tr>
+            <tr><td colspan="${reportType.includes('served') ? 7 : 6}">${escapeHtml(settings.officeName)}</td></tr>
+            <tr><td colspan="${reportType.includes('served') ? 7 : 6}">Period: ${escapeHtml(startDate)} to ${escapeHtml(endDate)}</td></tr>
+            <tr>
+              <th>Name</th>
+              <th>Case Number</th>
+              <th>Offense</th>
+              <th>Status</th>
+              <th>Date Issued</th>
+              <th>Assigned Officer</th>
+              ${reportType.includes('served') ? '<th>Date Served</th>' : ''}
+            </tr>
+            ${tableRows || `<tr><td colspan="${reportType.includes('served') ? 7 : 6}">No records found for the selected criteria.</td></tr>`}
+          </table>
+        </body>
+      </html>
+    `;
 
-  const handlePrint = () => {
-    window.print();
-  };
-
-  const reportTitles = {
-    'daily-served': 'Daily Served Warrants Report',
-    'monthly-served': 'Monthly Served Warrants Report',
-    'pending': 'Pending Warrants Report',
-    'unserved': 'Unserved Warrants Report',
-    'cancelled': 'Cancelled Warrants Report',
+    const blob = new Blob([excelHtml], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    downloadBlob(blob, `${reportType}-${startDate}-to-${endDate}.xls`);
+    toast.success('Excel report exported successfully.');
   };
 
   return (
@@ -170,16 +244,15 @@ export function Reports() {
         <p className="text-gray-600">Generate and export warrant reports</p>
       </div>
 
-      {/* Report Configuration */}
       <Card>
         <CardHeader>
           <CardTitle>Report Configuration</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <div>
               <Label htmlFor="reportType">Report Type</Label>
-              <Select value={reportType} onValueChange={setReportType}>
+              <Select value={reportType} onValueChange={(value) => setReportType(value as ReportType)}>
                 <SelectTrigger className="mt-1">
                   <SelectValue />
                 </SelectTrigger>
@@ -213,24 +286,24 @@ export function Reports() {
               />
             </div>
           </div>
-          <div className="flex gap-3 mt-6">
-            <Button onClick={handleExportPDF} className="bg-blue-600 hover:bg-blue-700">
-              <Download className="w-4 h-4 mr-2" />
+
+          {hasInvalidDateRange && (
+            <p className="mt-3 text-sm text-red-600">Start date must be earlier than or equal to end date.</p>
+          )}
+
+          <div className="mt-6 flex gap-3">
+            <Button onClick={handleExportPDF} className="bg-blue-600 hover:bg-blue-700" disabled={hasInvalidDateRange}>
+              <Download className="mr-2 h-4 w-4" />
               Export PDF
             </Button>
-            <Button onClick={handleExportExcel} variant="outline">
-              <Download className="w-4 h-4 mr-2" />
+            <Button onClick={handleExportExcel} variant="outline" disabled={hasInvalidDateRange}>
+              <Download className="mr-2 h-4 w-4" />
               Export Excel
-            </Button>
-            <Button onClick={handlePrint} variant="outline">
-              <Printer className="w-4 h-4 mr-2" />
-              Print
             </Button>
           </div>
         </CardContent>
       </Card>
 
-      {/* Report Summary Chart */}
       <Card>
         <CardHeader>
           <CardTitle>Report Summary</CardTitle>
@@ -240,7 +313,7 @@ export function Reports() {
             <BarChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="status" />
-              <YAxis />
+              <YAxis allowDecimals={false} />
               <Tooltip contentStyle={{ backgroundColor: '#fff', border: '1px solid #ccc' }} />
               <Legend />
               <Bar dataKey="count" fill="#3b82f6" name="Count" />
@@ -249,11 +322,10 @@ export function Reports() {
         </CardContent>
       </Card>
 
-      {/* Report Table */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle>{reportTitles[reportType as keyof typeof reportTitles]}</CardTitle>
+            <CardTitle>{reportTitles[reportType]}</CardTitle>
             <Badge variant="outline">{filteredWarrants.length} Records</Badge>
           </div>
           <p className="text-sm text-gray-600">
@@ -286,7 +358,7 @@ export function Reports() {
                       </Badge>
                     </TableCell>
                     <TableCell>{warrant.dateIssued}</TableCell>
-                    <TableCell>{warrant.assignedOfficer}</TableCell>
+                    <TableCell>{warrant.assignedOfficer || 'Not assigned'}</TableCell>
                     {reportType.includes('served') && (
                       <TableCell>{warrant.dateServed || 'N/A'}</TableCell>
                     )}
@@ -297,19 +369,13 @@ export function Reports() {
           </div>
 
           {filteredWarrants.length === 0 && (
-            <div className="text-center py-12">
-              <FileText className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+            <div className="py-12 text-center">
+              <FileText className="mx-auto mb-4 h-12 w-12 text-gray-300" />
               <p className="text-gray-500">No records found for the selected criteria</p>
             </div>
           )}
         </CardContent>
       </Card>
-
-      {/* Print Footer */}
-      <div className="hidden print:block text-center text-sm text-gray-600 mt-8">
-        <p>Philippine National Police - Butuan City Police Station 1</p>
-        <p>Warrant Management System - Generated on {new Date().toLocaleDateString()}</p>
-      </div>
     </div>
   );
 }

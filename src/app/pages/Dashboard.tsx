@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { FileText, Clock, CheckCircle, XCircle, Ban } from 'lucide-react';
 import { useSystem } from '../context/SystemContext';
+import { useMemo } from 'react';
 import {
   LineChart,
   Line,
@@ -26,12 +27,25 @@ export function Dashboard() {
   const unservedWarrants = warrants.filter(w => w.status === 'Unserved').length;
   const cancelledWarrants = warrants.filter(w => w.status === 'Cancelled').length;
 
-  const monthlyData = [
-    { id: 'jan', month: 'Jan', warrants: 12 },
-    { id: 'feb', month: 'Feb', warrants: 19 },
-    { id: 'mar', month: 'Mar', warrants: 15 },
-    { id: 'apr', month: 'Apr', warrants: 25 }
-  ];
+  const monthlyData = useMemo(() => {
+    const result: Array<{ id: string; month: string; warrants: number }> = [];
+    const now = new Date();
+
+    for (let i = 5; i >= 0; i -= 1) {
+      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      const label = date.toLocaleString('en-US', { month: 'short' });
+      const count = warrants.filter((w) => {
+        const issued = new Date(w.dateIssued);
+        const issuedKey = `${issued.getFullYear()}-${String(issued.getMonth() + 1).padStart(2, '0')}`;
+        return issuedKey === key;
+      }).length;
+
+      result.push({ id: key, month: label, warrants: count });
+    }
+
+    return result;
+  }, [warrants]);
 
   const pieData = [
     { id: 'pending', name: 'Pending', value: pendingWarrants, color: '#f97316' },
