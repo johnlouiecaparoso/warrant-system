@@ -61,7 +61,7 @@ export function WarrantEncode() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Warrant Encoding</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Add Warrant</h1>
         <p className="text-gray-600">
           {currentUser?.role === 'Admin'
             ? 'Add new warrant information to the system'
@@ -232,11 +232,11 @@ export function WarrantEncode() {
             </div>
 
             {/* Action Buttons */}
-            <div className="flex gap-3 pt-4">
-              <Button type="submit" className="bg-blue-600 hover:bg-blue-700" disabled={!isBackendReady}>
+            <div className="flex flex-col sm:flex-row gap-3 pt-4">
+              <Button type="submit" className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto" disabled={!isBackendReady}>
                 Save Warrant
               </Button>
-              <Button type="button" variant="outline" onClick={() => {
+              <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => {
                 reset();
                 setSelectedOfficer('');
               }}>
@@ -245,6 +245,7 @@ export function WarrantEncode() {
               <Button
                 type="button"
                 variant="outline"
+                className="w-full sm:w-auto"
                 onClick={() => navigate('/warrants')}
               >
                 Cancel

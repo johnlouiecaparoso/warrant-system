@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { Suspense, lazy, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Label } from '../components/ui/label';
 import { Input } from '../components/ui/input';
@@ -21,8 +21,12 @@ import {
 } from '../components/ui/table';
 import { FileText, Download } from 'lucide-react';
 import { useSystem } from '../context/SystemContext';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { toast } from 'sonner';
+import { ChartCardFallback } from '../components/ChartCardFallback';
+
+const ReportsChart = lazy(() =>
+  import('../components/ReportsChart').then((module) => ({ default: module.ReportsChart })),
+);
 
 const reportTitles = {
   'daily-served': 'Daily Served Warrants Report',
@@ -291,7 +295,7 @@ export function Reports() {
             <p className="mt-3 text-sm text-red-600">Start date must be earlier than or equal to end date.</p>
           )}
 
-          <div className="mt-6 flex gap-3">
+          <div className="mt-6 flex flex-col sm:flex-row gap-3">
             <Button onClick={handleExportPDF} className="bg-blue-600 hover:bg-blue-700" disabled={hasInvalidDateRange}>
               <Download className="mr-2 h-4 w-4" />
               Export PDF
@@ -304,27 +308,13 @@ export function Reports() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Report Summary</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="status" />
-              <YAxis allowDecimals={false} />
-              <Tooltip contentStyle={{ backgroundColor: '#fff', border: '1px solid #ccc' }} />
-              <Legend />
-              <Bar dataKey="count" fill="#3b82f6" name="Count" />
-            </BarChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
+      <Suspense fallback={<ChartCardFallback title="Report Summary" height={300} />}>
+        <ReportsChart chartData={chartData} />
+      </Suspense>
 
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <CardTitle>{reportTitles[reportType]}</CardTitle>
             <Badge variant="outline">{filteredWarrants.length} Records</Badge>
           </div>

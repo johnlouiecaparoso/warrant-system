@@ -54,22 +54,25 @@ export function Login() {
   };
 
   return (
-    <div className="min-h-screen relative flex items-center justify-center p-4 bg-[#0b1f3a]">
+    <div className="min-h-screen relative flex items-center justify-center overflow-hidden bg-[#0b1f3a] p-4">
       <div
         aria-hidden
-        className="absolute inset-0 bg-cover bg-center opacity-35"
+        className="absolute inset-0 hidden bg-cover bg-center opacity-35 sm:block"
         style={{ backgroundImage: "url('/img/bg.jpg?v=2')" }}
       />
       <div aria-hidden className="absolute inset-0 bg-[radial-gradient(circle_at_top,#3b82f64d,transparent_50%)]" />
+      <div aria-hidden className="absolute inset-0 sm:hidden bg-[linear-gradient(180deg,#102a4d_0%,#0b1f3a_58%,#081628_100%)]" />
       <div className="w-full max-w-md">
-        <div className="relative bg-white/95 backdrop-blur rounded-xl shadow-2xl p-8 border border-white/40">
-          <div className="text-center mb-8">
+        <div className="relative rounded-xl border border-white/40 bg-white p-5 shadow-2xl sm:bg-white/95 sm:p-8 sm:backdrop-blur">
+          <div className="text-center mb-6 sm:mb-8">
             <img
               src="/img/logo.jpg?v=2"
               alt="Warrant system logo"
-              className="mx-auto mb-4 h-20 w-20 rounded-full object-cover shadow-md"
+              className="mx-auto mb-4 h-16 w-16 rounded-full object-cover shadow-md sm:h-20 sm:w-20"
+              loading="eager"
+              decoding="async"
             />
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
               Butuan City Police Station 1
             </h1>
             <p className="text-gray-600">Warrant Management System</p>

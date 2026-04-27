@@ -47,14 +47,14 @@ export function Register() {
       />
       <div aria-hidden className="absolute inset-0 bg-[radial-gradient(circle_at_top,#3b82f64d,transparent_50%)]" />
       <div className="w-full max-w-md">
-        <div className="relative bg-white/95 backdrop-blur rounded-xl shadow-2xl p-8 border border-white/40">
-          <div className="text-center mb-8">
+        <div className="relative bg-white/95 backdrop-blur rounded-xl shadow-2xl p-5 sm:p-8 border border-white/40">
+          <div className="text-center mb-6 sm:mb-8">
             <img
               src="/img/logo.jpg?v=2"
               alt="Warrant system logo"
               className="mx-auto mb-4 h-20 w-20 rounded-full object-cover shadow-md"
             />
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">Create Account</h1>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">Create Account</h1>
             <p className="text-gray-600">New accounts are created as Warrant Officer</p>
           </div>
 

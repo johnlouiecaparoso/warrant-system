@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import {
@@ -42,6 +42,10 @@ export function AuditLogs() {
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, moduleFilter, dateFilter]);
 
   return (
     <div className="space-y-6">
@@ -93,7 +97,7 @@ export function AuditLogs() {
           <CardTitle>Activity Log ({filteredLogs.length} entries)</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
+          <div className="hidden md:block overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -121,6 +125,23 @@ export function AuditLogs() {
               </TableBody>
             </Table>
           </div>
+          <div className="space-y-3 md:hidden">
+            {paginatedLogs.map((log) => (
+              <Card key={log.id}>
+                <CardContent className="pt-4 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-semibold text-gray-900">{log.user}</p>
+                    <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800">
+                      {log.module}
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-700">{log.action}</p>
+                  <p className="text-sm text-gray-600">{log.dateTime}</p>
+                  <p className="font-mono text-xs text-gray-500">{log.ipAddress}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
 
           {filteredLogs.length === 0 && (
             <div className="text-center py-12">
@@ -130,11 +151,11 @@ export function AuditLogs() {
 
           {/* Pagination */}
           {filteredLogs.length > 0 && (
-            <div className="flex items-center justify-between mt-4">
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm text-gray-600">
                 Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredLogs.length)} of {filteredLogs.length} entries
               </p>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                   disabled={currentPage === 1}

@@ -69,14 +69,14 @@ export function Settings() {
           <CardTitle>Notifications</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <p className="font-medium text-gray-900">Overdue warrant alerts</p>
               <p className="text-sm text-gray-600">Notify when pending warrants are older than 30 days.</p>
             </div>
             <Switch checked={notifyOverdue} onCheckedChange={setNotifyOverdue} />
           </div>
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <p className="font-medium text-gray-900">Pending task badge</p>
               <p className="text-sm text-gray-600">Show pending and approval alerts in the top navigation bar.</p>

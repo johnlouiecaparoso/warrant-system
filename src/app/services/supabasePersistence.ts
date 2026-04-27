@@ -260,6 +260,37 @@ export async function saveWarrantToSupabase(
   return { ok: true };
 }
 
+export async function createWarrantInSupabase(
+  warrant: Warrant,
+): Promise<{ ok: boolean; message?: string }> {
+  if (!isSupabaseConfigured || !supabase) return { ok: true };
+
+  const { error } = await supabase.from('warrants').insert(toWarrantRow(warrant));
+
+  if (error) {
+    return { ok: false, message: error.message };
+  }
+
+  return { ok: true };
+}
+
+export async function updateWarrantInSupabase(
+  warrant: Warrant,
+): Promise<{ ok: boolean; message?: string }> {
+  if (!isSupabaseConfigured || !supabase) return { ok: true };
+
+  const { error } = await supabase
+    .from('warrants')
+    .update(toWarrantRow(warrant))
+    .eq('id', warrant.id);
+
+  if (error) {
+    return { ok: false, message: error.message };
+  }
+
+  return { ok: true };
+}
+
 export async function saveSettingsToSupabase(
   settings: AppSettings,
 ): Promise<{ ok: boolean; message?: string }> {

@@ -2,17 +2,18 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { AppSettings, AuditLog, User, Warrant } from '../data/models';
 import {
   authenticateWithSupabase,
+  createWarrantInSupabase,
   deleteWarrantById,
   getAuthenticatedProfile,
   loadFromSupabase,
   registerWithSupabaseAuth,
   saveSettingsToSupabase,
   saveUserToSupabase,
-  saveWarrantToSupabase,
   sendPasswordResetEmail,
   signOutFromSupabase,
   subscribeToAuthChanges,
   updateAuthenticatedPassword,
+  updateWarrantInSupabase,
   upsertAuditLogs,
 } from '../services/supabasePersistence';
 import { isSupabaseConfigured } from '../../lib/supabase';
@@ -66,7 +67,7 @@ interface UpdateProfilePayload {
 
 type NewWarrantPayload = Omit<
   Warrant,
-  'id' | 'status' | 'approvalStatus' | 'submittedBy' | 'submittedAt' | 'approvedBy' | 'approvedAt'
+  'id' | 'status' | 'approvalStatus' | 'submittedById' | 'submittedBy' | 'submittedAt' | 'approvedBy' | 'approvedAt'
 >;
 
 interface SystemContextValue {
@@ -153,6 +154,7 @@ function normalizeWarrant(warrant: Partial<Warrant>): Warrant {
     assignmentNotes: warrant.assignmentNotes,
     status: warrant.status || 'Pending',
     approvalStatus: warrant.approvalStatus === 'Approved' ? 'Approved' : 'For Approval',
+    submittedById: warrant.submittedById,
     submittedBy: warrant.submittedBy,
     submittedAt: warrant.submittedAt,
     approvedBy: warrant.approvedBy,
@@ -183,11 +185,55 @@ function normalizeSettings(settings?: Partial<AppSettings> | null): AppSettings 
 
 export function SystemProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
+  const [runtimeMessage, setRuntimeMessage] = useState<string | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [warrants, setWarrants] = useState<Warrant[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+
+  const failSafeReset = (message?: string | null) => {
+    setUsers([]);
+    setWarrants([]);
+    setAuditLogs([]);
+    setCurrentUser(null);
+    setSettings(DEFAULT_SETTINGS);
+    setRuntimeMessage(message ?? null);
+  };
+
+  const ownsWarrant = (warrant: Warrant) => {
+    if (currentUser?.role !== 'Warrant Officer') return false;
+    if (warrant.submittedById) {
+      return warrant.submittedById === currentUser.id;
+    }
+    return (warrant.submittedBy || '').trim().toLowerCase() === currentUser.fullName.trim().toLowerCase();
+  };
+
+  const isAwaitingApproval = (warrant: Warrant) => warrant.approvalStatus === 'For Approval';
+  const isDisplayPending = (warrant: Warrant) =>
+    warrant.status === 'Pending' && warrant.approvalStatus !== 'Approved';
+
+  const withTimeout = async <T,>(promise: Promise<T>, ms: number, message: string): Promise<T> => {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<T>((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error(message)), ms);
+        }),
+      ]);
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    }
+  };
+
+  const runBackendAction = async <T,>(
+    action: () => Promise<T>,
+    timeoutMessage: string,
+    timeoutMs = 12000,
+  ): Promise<T> => withTimeout(action(), timeoutMs, timeoutMessage);
 
   const applyRemoteState = async (profileOverride?: User | null) => {
     const remote = await loadFromSupabase();
@@ -197,6 +243,7 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
       setAuditLogs([]);
       setSettings(DEFAULT_SETTINGS);
       setCurrentUser(profileOverride ?? null);
+      setRuntimeMessage('Supabase is reachable, but the system data could not be loaded. Check your tables, RLS policies, and API keys.');
       return;
     }
 
@@ -212,6 +259,7 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     setAuditLogs(remote.auditLogs);
     setSettings(normalizeSettings(remote.settings));
     setCurrentUser(resolvedCurrentUser);
+    setRuntimeMessage(null);
   };
 
   useEffect(() => {
@@ -221,32 +269,33 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     const hydrate = async () => {
       if (!isSupabaseConfigured) {
         if (active) {
-          setUsers([]);
-          setWarrants([]);
-          setAuditLogs([]);
-          setCurrentUser(null);
-          setSettings(DEFAULT_SETTINGS);
+          failSafeReset(null);
           setIsLoading(false);
         }
         return;
       }
 
-      const profile = await getAuthenticatedProfile();
-      if (!active) return;
-
-      if (!profile) {
-        setUsers([]);
-        setWarrants([]);
-        setAuditLogs([]);
-        setCurrentUser(null);
-        setSettings(DEFAULT_SETTINGS);
-        setIsLoading(false);
-        return;
-      }
-
-      await applyRemoteState(normalizeUser(profile));
-      if (active) {
-        setIsLoading(false);
+      try {
+        // Always start localhost on the login screen instead of restoring a prior browser session.
+        await withTimeout(
+          signOutFromSupabase(),
+          12000,
+          'Timed out while clearing the previous login session.',
+        );
+        if (!active) return;
+        failSafeReset(null);
+      } catch (error) {
+        if (active) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : 'The system could not finish startup. Please check your Supabase connection and schema.';
+          failSafeReset(message);
+        }
+      } finally {
+        if (active) {
+          setIsLoading(false);
+        }
       }
     };
 
@@ -255,32 +304,41 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     const subscription = subscribeToAuthChanges(async (_event, session) => {
       if (!active) return;
 
-      if (!session?.user) {
-        setCurrentUser(null);
-        setUsers([]);
-        setWarrants([]);
-        setAuditLogs([]);
-        setSettings(DEFAULT_SETTINGS);
-        setIsLoading(false);
-        return;
-      }
+      try {
+        if (!session?.user) {
+          failSafeReset(null);
+          return;
+        }
 
-      const profile = await getAuthenticatedProfile();
-      if (!active) return;
+        const profile = await withTimeout(
+          getAuthenticatedProfile(),
+          12000,
+          'Timed out while refreshing the signed-in profile.',
+        );
+        if (!active) return;
 
-      if (!profile) {
-        setCurrentUser(null);
-        setUsers([]);
-        setWarrants([]);
-        setAuditLogs([]);
-        setSettings(DEFAULT_SETTINGS);
-        setIsLoading(false);
-        return;
-      }
+        if (!profile) {
+          failSafeReset('A login session was found, but the user profile could not be loaded from Supabase.');
+          return;
+        }
 
-      await applyRemoteState(normalizeUser(profile));
-      if (active) {
-        setIsLoading(false);
+        await withTimeout(
+          applyRemoteState(normalizeUser(profile)),
+          12000,
+          'Timed out while refreshing system data from Supabase.',
+        );
+      } catch (error) {
+        if (active) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : 'The system could not refresh its data after the sign-in state changed.';
+          failSafeReset(message);
+        }
+      } finally {
+        if (active) {
+          setIsLoading(false);
+        }
       }
     });
 
@@ -309,13 +367,19 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     setAuditLogs((prev) => [entry, ...prev]);
   };
 
+  const canOfficerModifyWarrant = (warrant: Warrant) =>
+    ownsWarrant(warrant);
+
   const login = async (email: string, password: string): Promise<LoginResult> => {
     if (!isSupabaseConfigured) {
       return { ok: false, message: SUPABASE_REQUIRED_MESSAGE };
     }
 
     const normalizedEmail = email.trim().toLowerCase();
-    const found = await authenticateWithSupabase(normalizedEmail, password);
+    const found = await runBackendAction(
+      () => authenticateWithSupabase(normalizedEmail, password),
+      'Timed out while signing in. Please check your connection and Supabase auth settings.',
+    );
 
     if (!found.ok || !found.user) {
       return { ok: false, message: found.message || 'Invalid email or password.' };
@@ -346,7 +410,10 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
       return { ok: false, message: 'Please enter a valid email address.' };
     }
 
-    const result = await registerWithSupabaseAuth(fullName.trim(), normalized, password);
+    const result = await runBackendAction(
+      () => registerWithSupabaseAuth(fullName.trim(), normalized, password),
+      'Timed out while creating the account. Please try again.',
+    );
     if (!result.ok) {
       return { ok: false, message: result.message };
     }
@@ -381,7 +448,10 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
       return { ok: false, message: 'Email is required.' };
     }
 
-    const result = await sendPasswordResetEmail(normalized);
+    const result = await runBackendAction(
+      () => sendPasswordResetEmail(normalized),
+      'Timed out while sending the reset email. Please try again.',
+    );
     return result.ok
       ? { ok: true, message: result.message }
       : { ok: false, message: result.message };
@@ -396,7 +466,10 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
       return { ok: false, message: 'New password is required.' };
     }
 
-    const result = await updateAuthenticatedPassword(password);
+    const result = await runBackendAction(
+      () => updateAuthenticatedPassword(password),
+      'Timed out while updating the password. Please try again.',
+    );
     return result.ok
       ? { ok: true, message: result.message }
       : { ok: false, message: result.message };
@@ -406,7 +479,10 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     if (currentUser) {
       logAction('Logged out of the system', 'Authentication');
     }
-    await signOutFromSupabase();
+    await runBackendAction(
+      () => signOutFromSupabase(),
+      'Timed out while signing out. Please refresh the page and try again.',
+    );
     setCurrentUser(null);
     setUsers([]);
     setWarrants([]);
@@ -429,13 +505,19 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
       fullName: trimmedName,
     };
 
-    const savedProfile = await saveUserToSupabase(updatedUser);
+    const savedProfile = await runBackendAction(
+      () => saveUserToSupabase(updatedUser),
+      'Timed out while updating the profile. Please try again.',
+    );
     if (!savedProfile.ok) {
       return { ok: false, message: `Unable to update profile in Supabase: ${savedProfile.message}` };
     }
 
     if (password?.trim()) {
-      const passwordResult = await updateAuthenticatedPassword(password);
+      const passwordResult = await runBackendAction(
+        () => updateAuthenticatedPassword(password),
+        'Timed out while updating the password. Please try again.',
+      );
       if (!passwordResult.ok) {
         return { ok: false, message: passwordResult.message };
       }
@@ -453,7 +535,10 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     }
 
     const nextSettings = normalizeSettings({ id: 'global', ...payload });
-    const saved = await saveSettingsToSupabase(nextSettings);
+    const saved = await runBackendAction(
+      () => saveSettingsToSupabase(nextSettings),
+      'Timed out while saving system settings. Please try again.',
+    );
     if (!saved.ok) {
       return { ok: false, message: `Unable to save settings in Supabase: ${saved.message}` };
     }
@@ -474,6 +559,7 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
       id: generateId(),
       status: 'Pending',
       approvalStatus: createdByAdmin ? 'Approved' : 'For Approval',
+      submittedById: currentUser?.id ?? undefined,
       submittedBy: currentUser?.fullName ?? 'System',
       submittedAt: now(),
       approvedBy: createdByAdmin ? currentUser?.fullName ?? 'System' : undefined,
@@ -481,7 +567,10 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
       dateAssigned: warrant.dateAssigned || new Date().toISOString().slice(0, 10),
     };
 
-    const saved = await saveWarrantToSupabase(newWarrant);
+    const saved = await runBackendAction(
+      () => createWarrantInSupabase(newWarrant),
+      'Timed out while saving the warrant. Please try again.',
+    );
     if (!saved.ok) {
       return {
         ok: false,
@@ -494,7 +583,7 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
       createdByAdmin
         ? `Added and approved new warrant for ${warrant.name}`
         : `Submitted new warrant for ${warrant.name} for admin approval`,
-      'Warrant Encoding',
+      'Add Warrant',
     );
     return {
       ok: true,
@@ -513,9 +602,15 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     if (!target) {
       return { ok: false, message: 'Warrant record not found.' };
     }
+    if (!canOfficerModifyWarrant(target)) {
+      return { ok: false, message: 'You can only edit warrants you submitted.' };
+    }
 
     const updatedWarrant = normalizeWarrant({ ...target, ...payload, id: warrantId });
-    const saved = await saveWarrantToSupabase(updatedWarrant);
+    const saved = await runBackendAction(
+      () => updateWarrantInSupabase(updatedWarrant),
+      'Timed out while updating the warrant. Please try again.',
+    );
     if (!saved.ok) {
       return { ok: false, message: `Unable to update warrant in Supabase: ${saved.message}` };
     }
@@ -534,8 +629,14 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     if (!target) {
       return { ok: false, message: 'Warrant record not found.' };
     }
+    if (!canOfficerModifyWarrant(target)) {
+      return { ok: false, message: 'You can only delete warrants you submitted.' };
+    }
 
-    const result = await deleteWarrantById(warrantId);
+    const result = await runBackendAction(
+      () => deleteWarrantById(warrantId),
+      'Timed out while deleting the warrant. Please try again.',
+    );
     if (!result.ok) {
       return { ok: false, message: `Unable to delete warrant in Supabase: ${result.message}` };
     }
@@ -563,7 +664,10 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
       status: 'Pending',
     };
 
-    const saved = await saveWarrantToSupabase(updatedWarrant);
+    const saved = await runBackendAction(
+      () => updateWarrantInSupabase(updatedWarrant),
+      'Timed out while assigning the warrant. Please try again.',
+    );
     if (!saved.ok) {
       return { ok: false, message: `Unable to assign warrant in Supabase: ${saved.message}` };
     }
@@ -621,7 +725,10 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
       };
     }
 
-    const saved = await saveWarrantToSupabase(updatedWarrant);
+    const saved = await runBackendAction(
+      () => updateWarrantInSupabase(updatedWarrant),
+      'Timed out while updating the warrant status. Please try again.',
+    );
     if (!saved.ok) {
       return { ok: false, message: `Unable to update warrant status in Supabase: ${saved.message}` };
     }
@@ -659,7 +766,10 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
       approvedAt: now(),
     };
 
-    const saved = await saveWarrantToSupabase(updatedWarrant);
+    const saved = await runBackendAction(
+      () => updateWarrantInSupabase(updatedWarrant),
+      'Timed out while approving the warrant. Please try again.',
+    );
     if (!saved.ok) {
       return { ok: false, message: `Unable to approve warrant in Supabase: ${saved.message}` };
     }
@@ -689,7 +799,10 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
       email: target.email,
     });
 
-    const saved = await saveUserToSupabase(updatedUser);
+    const saved = await runBackendAction(
+      () => saveUserToSupabase(updatedUser),
+      'Timed out while updating the user account. Please try again.',
+    );
     if (!saved.ok) {
       return { ok: false, message: `Unable to update user in Supabase: ${saved.message}` };
     }
@@ -717,7 +830,10 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
       status: 'Inactive',
     };
 
-    const saved = await saveUserToSupabase(updatedUser);
+    const saved = await runBackendAction(
+      () => saveUserToSupabase(updatedUser),
+      'Timed out while deactivating the user account. Please try again.',
+    );
     if (!saved.ok) {
       return { ok: false, message: `Unable to deactivate user in Supabase: ${saved.message}` };
     }
@@ -731,39 +847,58 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
   };
 
   const pendingNotifications = useMemo(() => {
-    const submittedForApproval =
-      currentUser?.role === 'Admin'
-        ? warrants.filter((w) => w.approvalStatus === 'For Approval').length
-        : 0;
+    if (currentUser?.role === 'Admin') {
+      return warrants.filter(isAwaitingApproval).length;
+    }
 
-    return warrants.filter((w) => w.status === 'Pending').length + submittedForApproval;
+    if (currentUser?.role === 'Warrant Officer') {
+      return warrants.filter((w) => ownsWarrant(w) && w.approvalStatus === 'Approved').length;
+    }
+
+    return 0;
   }, [currentUser?.role, warrants]);
 
   const overdueCount = useMemo(() => {
     const today = new Date();
     return warrants.filter((w) => {
-      if (w.status !== 'Pending') return false;
+      if (!isDisplayPending(w)) return false;
       const issuedDate = new Date(w.dateIssued);
       const days = Math.floor((today.getTime() - issuedDate.getTime()) / (1000 * 60 * 60 * 24));
       return days > 30;
     }).length;
   }, [warrants]);
 
+  const ownOverdueCount = useMemo(() => {
+    if (currentUser?.role !== 'Warrant Officer') return 0;
+    const today = new Date();
+    return warrants.filter((w) => {
+      if (!ownsWarrant(w) || !isDisplayPending(w)) return false;
+      const issuedDate = new Date(w.dateIssued);
+      const days = Math.floor((today.getTime() - issuedDate.getTime()) / (1000 * 60 * 60 * 24));
+      return days > 30;
+    }).length;
+  }, [currentUser?.role, warrants]);
+
   const urgentCount = useMemo(() => {
-    let count = warrants.filter((w) => w.status === 'Unserved').length;
+    let count =
+      currentUser?.role === 'Warrant Officer'
+        ? warrants.filter((w) => ownsWarrant(w) && w.status === 'Unserved').length
+        : warrants.filter((w) => w.status === 'Unserved').length;
     if (settings.notifyPending) {
       count += pendingNotifications;
     }
     if (settings.notifyOverdue) {
-      count += overdueCount;
+      count += currentUser?.role === 'Warrant Officer'
+        ? ownOverdueCount
+        : overdueCount;
     }
     return count;
-  }, [overdueCount, pendingNotifications, settings.notifyOverdue, settings.notifyPending, warrants]);
+  }, [currentUser?.role, overdueCount, ownOverdueCount, pendingNotifications, settings.notifyOverdue, settings.notifyPending, warrants]);
 
   const value: SystemContextValue = {
     isLoading,
     isBackendReady: isSupabaseConfigured,
-    backendMessage: isSupabaseConfigured ? null : SUPABASE_REQUIRED_MESSAGE,
+    backendMessage: !isSupabaseConfigured ? SUPABASE_REQUIRED_MESSAGE : runtimeMessage,
     currentUser,
     warrants,
     users,

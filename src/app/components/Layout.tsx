@@ -90,31 +90,33 @@ export function Layout() {
   };
 
   const notifications = useMemo(() => {
-    const pendingWarrants = warrants.filter((w) => w.status === 'Pending').length;
+    const ownsWarrant = (submittedBy?: string) =>
+      (submittedBy || '').trim().toLowerCase() === (currentUser?.fullName || '').trim().toLowerCase();
+    const awaitingApproval = warrants.filter((w) => w.approvalStatus === 'For Approval').length;
     const unservedWarrants = warrants.filter((w) => w.status === 'Unserved').length;
-    const approvalQueue =
-      currentUser?.role === 'Admin'
-        ? warrants.filter((w) => w.approvalStatus === 'For Approval').length
+    const approvedOwnSubmissions =
+      currentUser?.role === 'Warrant Officer'
+        ? warrants.filter((w) => w.approvalStatus === 'Approved' && ownsWarrant(w.submittedBy)).length
         : 0;
 
     const list: Array<{ id: string; title: string; description: string; icon: JSX.Element; route: string }> = [];
 
-    if (settings.notifyPending && pendingWarrants > 0) {
+    if (settings.notifyPending && currentUser?.role === 'Admin' && awaitingApproval > 0) {
       list.push({
-        id: 'pending-warrants',
-        title: 'Pending Warrants',
-        description: `${pendingWarrants} warrant(s) waiting for action.`,
-        icon: <Clock3 className="w-4 h-4 text-orange-600" />,
+        id: 'approval-queue',
+        title: 'Awaiting Approval',
+        description: `${awaitingApproval} warrant submission(s) waiting for admin approval.`,
+        icon: <ShieldAlert className="w-4 h-4 text-blue-600" />,
         route: '/warrants',
       });
     }
 
-    if (settings.notifyPending && approvalQueue > 0) {
+    if (settings.notifyPending && approvedOwnSubmissions > 0) {
       list.push({
-        id: 'approval-queue',
-        title: 'Awaiting Approval',
-        description: `${approvalQueue} warrant submission(s) waiting for admin approval.`,
-        icon: <ShieldAlert className="w-4 h-4 text-blue-600" />,
+        id: 'approved-submissions',
+        title: 'Approved Warrants',
+        description: `${approvedOwnSubmissions} of your submitted warrant(s) were approved by admin.`,
+        icon: <CheckCircle2 className="w-4 h-4 text-emerald-600" />,
         route: '/warrants',
       });
     }
@@ -139,18 +141,8 @@ export function Layout() {
       });
     }
 
-    if (list.length === 0) {
-      list.push({
-        id: 'all-clear',
-        title: 'All Caught Up',
-        description: 'No urgent notifications right now.',
-        icon: <CheckCircle2 className="w-4 h-4 text-green-600" />,
-        route: '/',
-      });
-    }
-
     return list;
-  }, [currentUser?.role, overdueCount, settings.notifyOverdue, settings.notifyPending, warrants]);
+  }, [currentUser?.fullName, currentUser?.role, overdueCount, settings.notifyOverdue, settings.notifyPending, warrants]);
 
   const openProfileDialog = () => {
     setFullName(currentUser?.fullName || '');
@@ -170,7 +162,7 @@ export function Layout() {
 
   const navItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
-    { icon: FileText, label: 'Warrant Encoding', path: '/warrants/encode' },
+    { icon: FileText, label: 'Add Warrant', path: '/warrants/encode' },
     { icon: FileText, label: 'Warrant Records', path: '/warrants' },
     { icon: SearchIcon, label: 'Search', path: '/search' },
     { icon: BarChart3, label: 'Reports', path: '/reports' },
@@ -181,7 +173,7 @@ export function Layout() {
 
   const pageTitleMap: Record<string, string> = {
     '/': 'Dashboard',
-    '/warrants/encode': 'Warrant Encoding',
+    '/warrants/encode': 'Add Warrant',
     '/warrants': 'Warrant Records',
     '/search': 'Search',
     '/reports': 'Reports',
@@ -201,32 +193,34 @@ export function Layout() {
   });
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen overflow-x-hidden bg-slate-50">
       {/* Top Navigation Bar */}
-      <header className="bg-white border-b border-gray-200 fixed top-0 left-0 right-0 z-50">
-        <div className="flex items-center justify-between px-4 h-16">
-          <div className="flex items-center gap-4">
+      <header className="fixed top-0 left-0 right-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur">
+        <div className="flex min-h-16 items-center justify-between gap-2 px-3 py-2 sm:px-4">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-4">
             <button
               aria-label="Toggle navigation menu"
               title="Toggle navigation menu"
               onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="lg:hidden p-2 hover:bg-gray-100 rounded-lg"
+              className="rounded-xl p-2 hover:bg-slate-100 lg:hidden"
             >
               {sidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
             </button>
-            <div className="flex items-center gap-3">
+            <div className="flex min-w-0 items-center gap-2 sm:gap-3">
               <img
                 src="/img/logo.jpg?v=2"
                 alt="Warrant system logo"
-                className="h-10 w-10 rounded-lg object-cover shadow-sm"
+                className="h-9 w-9 rounded-lg object-cover shadow-sm sm:h-10 sm:w-10"
               />
-              <div>
-                <h1 className="font-bold text-gray-900">{settings.officeName}</h1>
-                <p className="text-xs text-gray-500">Warrant Management System</p>
+              <div className="min-w-0 max-w-[calc(100vw-12.5rem)] sm:max-w-none">
+                <h1 className="line-clamp-2 text-xs font-bold leading-tight text-slate-900 sm:line-clamp-1 sm:text-base">
+                  {settings.officeName}
+                </h1>
+                <p className="hidden text-xs text-slate-500 sm:block">Warrant Management System</p>
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-4">
             <form onSubmit={handleGlobalSearch} className="hidden md:block">
               <div className="relative w-72">
                 <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -240,7 +234,7 @@ export function Layout() {
             </form>
             <Popover>
               <PopoverTrigger asChild>
-                <button aria-label="Notifications" title="Notifications" className="relative p-2 hover:bg-gray-100 rounded-lg">
+                <button aria-label="Notifications" title="Notifications" className="relative rounded-xl p-2 hover:bg-slate-100">
                   <Bell className="w-5 h-5 text-gray-600" />
                   {urgentCount > 0 && (
                     <span className="absolute -top-1 -right-1 min-w-5 h-5 text-[11px] px-1 grid place-items-center rounded-full bg-red-500 text-white">
@@ -249,7 +243,7 @@ export function Layout() {
                   )}
                 </button>
               </PopoverTrigger>
-              <PopoverContent align="end" className="w-80 p-0">
+              <PopoverContent align="end" className="w-[90vw] max-w-80 p-0">
                 <div className="px-4 py-3 border-b">
                   <h3 className="font-semibold text-gray-900">Notifications</h3>
                   <p className="text-xs text-gray-500">Live operational alerts</p>
@@ -277,7 +271,7 @@ export function Layout() {
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="flex items-center gap-2 px-3 py-2 hover:bg-gray-100 rounded-lg cursor-pointer">
+                <button className="flex cursor-pointer items-center gap-2 rounded-xl px-2 py-2 hover:bg-slate-100 sm:px-3">
                   <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
                     <User className="w-4 h-4 text-blue-600" />
                   </div>
@@ -309,23 +303,35 @@ export function Layout() {
               aria-label="Logout"
               title="Logout"
               onClick={() => setLogoutDialogOpen(true)}
-              className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 hover:text-red-600"
+              className="rounded-xl p-2 text-gray-600 hover:bg-slate-100 hover:text-red-600"
             >
               <LogOut className="w-5 h-5" />
             </button>
           </div>
+        </div>
+        <div className="border-t border-slate-100 px-3 pb-3 md:hidden">
+          <form onSubmit={handleGlobalSearch} className="relative">
+            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <Input
+              value={globalSearch}
+              onChange={(e) => setGlobalSearch(e.target.value)}
+              placeholder="Search warrants, cases, or offenses"
+              className="h-11 rounded-xl border-slate-200 bg-slate-50 pl-9"
+            />
+          </form>
         </div>
       </header>
 
       {/* Sidebar */}
       <aside
         className={`
-          fixed top-16 left-0 h-[calc(100vh-4rem)] bg-white border-r border-gray-200
-          transition-transform duration-300 z-40 w-64
+          fixed left-0 z-40 w-[85vw] max-w-72 border-r border-slate-200 bg-white
+          transition-transform duration-300 lg:w-64
+          top-[109px] h-[calc(100vh-109px)] md:top-16 md:h-[calc(100vh-4rem)]
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         `}
       >
-        <nav className="p-4 space-y-2">
+        <nav className="h-full space-y-2 overflow-y-auto p-4">
           {visibleNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.path;
@@ -343,7 +349,7 @@ export function Layout() {
                 `}
               >
                 <Icon className="w-5 h-5" />
-                <span>{item.label}</span>
+                <span className="truncate">{item.label}</span>
               </Link>
             );
           })}
@@ -353,14 +359,14 @@ export function Layout() {
       {/* Mobile Overlay */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 z-30 lg:hidden top-16"
+          className="fixed inset-0 top-[109px] z-30 bg-black/40 md:top-16 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
       {/* Main Content */}
-      <main className="lg:ml-64 mt-16 p-6">
-        <div className="mb-4">
+      <main className="mt-[109px] p-3 sm:p-4 md:mt-16 lg:ml-64 lg:p-6">
+        <div className="mb-4 overflow-x-auto">
           <Breadcrumb>
             <BreadcrumbList>
               <BreadcrumbItem>

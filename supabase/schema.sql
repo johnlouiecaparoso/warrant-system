@@ -68,6 +68,7 @@ create table if not exists public.warrants (
   "assignmentNotes" text,
   status text not null check (status in ('Pending', 'Served', 'Unserved', 'Cancelled')),
   "approvalStatus" text not null default 'For Approval' check ("approvalStatus" in ('For Approval', 'Approved')),
+  "submittedById" text,
   "submittedBy" text,
   "submittedAt" text,
   "approvedBy" text,
@@ -83,10 +84,17 @@ create table if not exists public.warrants (
 );
 
 alter table public.warrants add column if not exists "approvalStatus" text;
+alter table public.warrants add column if not exists "submittedById" text;
 alter table public.warrants add column if not exists "submittedBy" text;
 alter table public.warrants add column if not exists "submittedAt" text;
 alter table public.warrants add column if not exists "approvedBy" text;
 alter table public.warrants add column if not exists "approvedAt" text;
+
+update public.warrants w
+set "submittedById" = u.id
+from public.app_users u
+where w."submittedById" is null
+  and w."submittedBy" = u."fullName";
 
 update public.warrants
 set "approvalStatus" = 'Approved'
@@ -275,18 +283,29 @@ for insert
 to authenticated
 with check (public.is_active_user());
 
+drop policy if exists warrants_update_admin_or_submitter on public.warrants;
 drop policy if exists warrants_update_admin_only on public.warrants;
-create policy warrants_update_admin_only on public.warrants
+create policy warrants_update_admin_or_submitter on public.warrants
 for update
 to authenticated
-using (public.current_app_role() = 'Admin')
-with check (public.current_app_role() = 'Admin');
+using (
+  public.current_app_role() = 'Admin'
+  or "submittedById" = auth.uid()::text
+)
+with check (
+  public.current_app_role() = 'Admin'
+  or "submittedById" = auth.uid()::text
+);
 
+drop policy if exists warrants_delete_admin_or_submitter on public.warrants;
 drop policy if exists warrants_delete_admin_only on public.warrants;
-create policy warrants_delete_admin_only on public.warrants
+create policy warrants_delete_admin_or_submitter on public.warrants
 for delete
 to authenticated
-using (public.current_app_role() = 'Admin');
+using (
+  public.current_app_role() = 'Admin'
+  or "submittedById" = auth.uid()::text
+);
 
 drop policy if exists audit_logs_select_admin_only on public.audit_logs;
 create policy audit_logs_select_admin_only on public.audit_logs
