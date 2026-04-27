@@ -22,8 +22,16 @@ import { CheckCircle2, Edit, Eye, LoaderCircle, Search, Trash2 } from 'lucide-re
 import { Warrant } from '../data/models';
 import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '../components/ui/dialog';
 import { toast } from 'sonner';
 import { useSystem } from '../context/SystemContext';
+import { getDisplayStatus } from '../lib/warrantStatus';
 
 export function WarrantList() {
   const {
@@ -68,11 +76,6 @@ export function WarrantList() {
       warrant.submittedById === currentUser.id ||
       (warrant.submittedBy || '').trim().toLowerCase() === (currentUser.fullName || '').trim().toLowerCase()
     );
-  const getDisplayStatus = (warrant: Warrant) =>
-    warrant.approvalStatus === 'Approved' && warrant.status === 'Pending'
-      ? 'Approved'
-      : warrant.status;
-
   const barangays = Array.from(new Set(warrants.map((w) => w.barangay))).sort();
   const offenses = Array.from(new Set(warrants.map((w) => w.offense))).sort();
 
@@ -448,17 +451,18 @@ export function WarrantList() {
         </CardContent>
       </Card>
 
-      {selectedWarrant && (
-        <Card>
-          <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <CardTitle>{editingWarrant ? 'Edit Warrant' : 'Warrant Details'}</CardTitle>
-              <p className="text-sm text-gray-600">
+      <Dialog open={Boolean(selectedWarrant)} onOpenChange={(open) => !open && closePanels()}>
+        {selectedWarrant && (
+          <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
+            <DialogHeader>
+              <DialogTitle>{editingWarrant ? 'Edit Warrant' : 'Warrant Details'}</DialogTitle>
+              <DialogDescription>
                 {editingWarrant
                   ? `Update the warrant record for ${selectedWarrant.name}.`
                   : `Review the full warrant record for ${selectedWarrant.name}.`}
-              </p>
-            </div>
+              </DialogDescription>
+            </DialogHeader>
+
             <div className="flex flex-wrap gap-2">
               {isAdmin && selectedWarrant.approvalStatus !== 'Approved' && (
                 <Button
@@ -496,8 +500,7 @@ export function WarrantList() {
                 Close
               </Button>
             </div>
-          </CardHeader>
-          <CardContent>
+
             {editingWarrant ? (
               <div className="space-y-4">
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -541,6 +544,14 @@ export function WarrantList() {
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                {(selectedWarrant.photoUrl || selectedWarrant.photoDataUrl) && (
+                  <div className="sm:col-span-2">
+                    <p className="text-sm text-gray-600">Photo</p>
+                    <div className="mt-2 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 p-2">
+                      <img src={selectedWarrant.photoUrl || selectedWarrant.photoDataUrl} alt={selectedWarrant.name} className="h-56 w-full rounded-lg object-cover sm:max-w-sm" />
+                    </div>
+                  </div>
+                )}
                 <div>
                   <p className="text-sm text-gray-600">Name</p>
                   <p className="font-medium">{selectedWarrant.name}</p>
@@ -603,9 +614,9 @@ export function WarrantList() {
                 </div>
               </div>
             )}
-          </CardContent>
-        </Card>
-      )}
+          </DialogContent>
+        )}
+      </Dialog>
     </div>
   );
 }

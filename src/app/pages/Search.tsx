@@ -17,6 +17,7 @@ import { Search as SearchIcon } from 'lucide-react';
 import { Warrant } from '../data/models';
 import { useSystem } from '../context/SystemContext';
 import { useLocation } from 'react-router-dom';
+import { getDisplayStatus } from '../lib/warrantStatus';
 
 export function Search() {
   const { warrants } = useSystem();
@@ -52,7 +53,7 @@ export function Search() {
       const matchesCaseNumber = !searchCaseNumber || warrant.caseNumber.toLowerCase().includes(searchCaseNumber.toLowerCase());
       const matchesBarangay = !searchBarangay || warrant.barangay.toLowerCase().includes(searchBarangay.toLowerCase());
       const matchesOffense = !searchOffense || warrant.offense.toLowerCase().includes(searchOffense.toLowerCase());
-      const matchesStatus = searchStatus === 'all' || warrant.status === searchStatus;
+      const matchesStatus = searchStatus === 'all' || getDisplayStatus(warrant) === searchStatus;
       const matchesOfficer = !searchOfficer || warrant.assignedOfficer.toLowerCase().includes(searchOfficer.toLowerCase());
 
       return matchesName && matchesCaseNumber && matchesBarangay && matchesOffense && matchesStatus && matchesOfficer;
@@ -76,6 +77,7 @@ export function Search() {
   const statusBadgeClass = (status: string) => {
     switch (status) {
       case 'Pending': return 'bg-orange-100 text-orange-700';
+      case 'Approved': return 'bg-emerald-100 text-emerald-700';
       case 'Served': return 'bg-green-100 text-green-700';
       case 'Unserved': return 'bg-red-100 text-red-700';
       case 'Cancelled': return 'bg-gray-100 text-gray-700';
@@ -146,6 +148,7 @@ export function Search() {
                 <SelectContent>
                   <SelectItem value="all">All Status</SelectItem>
                   <SelectItem value="Pending">Pending</SelectItem>
+                  <SelectItem value="Approved">Approved</SelectItem>
                   <SelectItem value="Served">Served</SelectItem>
                   <SelectItem value="Unserved">Unserved</SelectItem>
                   <SelectItem value="Cancelled">Cancelled</SelectItem>
@@ -198,6 +201,7 @@ export function Search() {
                         <TableHead>Barangay</TableHead>
                         <TableHead>Assigned Officer</TableHead>
                         <TableHead>Status</TableHead>
+                        <TableHead>Photo</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -209,9 +213,16 @@ export function Search() {
                           <TableCell>{warrant.barangay}</TableCell>
                           <TableCell>{warrant.assignedOfficer}</TableCell>
                           <TableCell>
-                            <Badge className={statusBadgeClass(warrant.status)}>
-                              {warrant.status}
+                            <Badge className={statusBadgeClass(getDisplayStatus(warrant))}>
+                              {getDisplayStatus(warrant)}
                             </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {warrant.photoUrl || warrant.photoDataUrl ? (
+                              <img src={warrant.photoUrl || warrant.photoDataUrl} alt={warrant.name} className="h-12 w-12 rounded-lg object-cover" />
+                            ) : (
+                              'None'
+                            )}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -224,6 +235,9 @@ export function Search() {
                     <Card key={warrant.id} className="hover:shadow-lg transition-shadow">
                       <CardContent className="pt-6">
                         <div className="space-y-3">
+                          {(warrant.photoUrl || warrant.photoDataUrl) && (
+                            <img src={warrant.photoUrl || warrant.photoDataUrl} alt={warrant.name} className="h-40 w-full rounded-lg object-cover" />
+                          )}
                           <div>
                             <p className="font-semibold text-gray-900">{warrant.name}</p>
                             <p className="text-sm text-gray-500">{warrant.alias}</p>
@@ -239,8 +253,8 @@ export function Search() {
                           <div>
                             <p className="text-sm text-gray-600">Issued: {warrant.dateIssued}</p>
                           </div>
-                          <Badge className={statusBadgeClass(warrant.status)}>
-                            {warrant.status}
+                          <Badge className={statusBadgeClass(getDisplayStatus(warrant))}>
+                            {getDisplayStatus(warrant)}
                           </Badge>
                         </div>
                       </CardContent>

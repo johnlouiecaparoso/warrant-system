@@ -4,6 +4,7 @@ import { Toaster } from './components/ui/sonner';
 import { useSystem } from './context/SystemContext';
 import { User } from './data/models';
 import { Layout } from './components/Layout';
+import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { ResetPassword } from './pages/ResetPassword';
@@ -83,61 +84,63 @@ function RoleGuard({
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Toaster position="top-right" />
-      <Suspense fallback={<RouteFallback />}>
-        <Routes>
-          <Route
-            path="/login"
-            element={
-              <PublicOnlyRoute>
-                <Login />
-              </PublicOnlyRoute>
-            }
-          />
-          <Route
-            path="/register"
-            element={
-              <PublicOnlyRoute>
-                <Register />
-              </PublicOnlyRoute>
-            }
-          />
-          <Route path="/reset-password" element={<ResetPassword />} />
-          <Route path="/" element={<ProtectedLayout />}>
-            <Route index element={<Dashboard />} />
+    <AppErrorBoundary>
+      <BrowserRouter>
+        <Toaster position="top-right" />
+        <Suspense fallback={<RouteFallback />}>
+          <Routes>
             <Route
-              path="warrants/encode"
+              path="/login"
               element={
-                <RoleGuard roles={['Warrant Officer']}>
-                  <WarrantEncode />
-                </RoleGuard>
-              }
-            />
-            <Route path="warrants" element={<WarrantList />} />
-            <Route path="search" element={<Search />} />
-            <Route path="reports" element={<Reports />} />
-            <Route
-              path="users"
-              element={
-                <RoleGuard roles={['Admin']}>
-                  <UserManagement />
-                </RoleGuard>
+                <PublicOnlyRoute>
+                  <Login />
+                </PublicOnlyRoute>
               }
             />
             <Route
-              path="audit-logs"
+              path="/register"
               element={
-                <RoleGuard roles={['Admin']}>
-                  <AuditLogs />
-                </RoleGuard>
+                <PublicOnlyRoute>
+                  <Register />
+                </PublicOnlyRoute>
               }
             />
-            <Route path="settings" element={<Settings />} />
-          </Route>
-          <Route path="*" element={<Navigate to="/login" replace />} />
-        </Routes>
-      </Suspense>
-    </BrowserRouter>
+            <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/" element={<ProtectedLayout />}>
+              <Route index element={<Dashboard />} />
+              <Route
+                path="warrants/encode"
+                element={
+                  <RoleGuard roles={['Warrant Officer']}>
+                    <WarrantEncode />
+                  </RoleGuard>
+                }
+              />
+              <Route path="warrants" element={<WarrantList />} />
+              <Route path="search" element={<Search />} />
+              <Route path="reports" element={<Reports />} />
+              <Route
+                path="users"
+                element={
+                  <RoleGuard roles={['Admin']}>
+                    <UserManagement />
+                  </RoleGuard>
+                }
+              />
+              <Route
+                path="audit-logs"
+                element={
+                  <RoleGuard roles={['Admin']}>
+                    <AuditLogs />
+                  </RoleGuard>
+                }
+              />
+              <Route path="settings" element={<Settings />} />
+            </Route>
+            <Route path="*" element={<Navigate to="/login" replace />} />
+          </Routes>
+        </Suspense>
+      </BrowserRouter>
+    </AppErrorBoundary>
   );
 }

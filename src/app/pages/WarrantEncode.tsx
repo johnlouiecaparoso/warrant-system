@@ -18,6 +18,7 @@ import { useSystem } from '../context/SystemContext';
 
 interface WarrantFormData {
   name: string;
+  photoDataUrl?: string;
   alias: string;
   caseNumber: string;
   offense: string;
@@ -30,17 +31,52 @@ interface WarrantFormData {
   remarks: string;
 }
 
+async function fileToResizedDataUrl(file: File): Promise<string> {
+  const sourceDataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('Unable to read the selected image.'));
+    reader.readAsDataURL(file);
+  });
+
+  const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Unable to process the selected image.'));
+    img.src = sourceDataUrl;
+  });
+
+  const maxDimension = 960;
+  const scale = Math.min(1, maxDimension / Math.max(image.width, image.height));
+  const width = Math.max(1, Math.round(image.width * scale));
+  const height = Math.max(1, Math.round(image.height * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+
+  const context = canvas.getContext('2d');
+  if (!context) {
+    throw new Error('Unable to prepare the selected image.');
+  }
+
+  context.drawImage(image, 0, 0, width, height);
+  return canvas.toDataURL('image/jpeg', 0.82);
+}
+
 export function WarrantEncode() {
   const navigate = useNavigate();
   const { addWarrant, users, currentUser, backendMessage, isBackendReady } = useSystem();
   const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<WarrantFormData>();
   const [selectedOfficer, setSelectedOfficer] = useState('');
+  const [photoPreview, setPhotoPreview] = useState('');
+  const [isPreparingPhoto, setIsPreparingPhoto] = useState(false);
 
   const officers = users.filter(u => u.role === 'Warrant Officer' && u.status === 'Active');
 
   const onSubmit = async (data: WarrantFormData) => {
     const result = await addWarrant({
       ...data,
+      photoDataUrl: photoPreview || undefined,
       dateAssigned: new Date().toISOString().slice(0, 10),
       assignmentNotes: data.remarks,
     });
@@ -56,6 +92,7 @@ export function WarrantEncode() {
     );
     reset();
     setSelectedOfficer('');
+    setPhotoPreview('');
   };
 
   return (
@@ -85,6 +122,43 @@ export function WarrantEncode() {
             <div>
               <h3 className="font-semibold text-gray-900 mb-4">Accused Information</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <Label htmlFor="photo">Photo of Accused</Label>
+                  <Input
+                    id="photo"
+                    type="file"
+                    accept="image/*"
+                    className="mt-1"
+                    onChange={async (event) => {
+                      const file = event.target.files?.[0];
+                      if (!file) {
+                        setPhotoPreview('');
+                        return;
+                      }
+
+                      setIsPreparingPhoto(true);
+                      try {
+                        const dataUrl = await fileToResizedDataUrl(file);
+                        setPhotoPreview(dataUrl);
+                      } catch (error) {
+                        toast.error(error instanceof Error ? error.message : 'Unable to attach the selected image.');
+                        event.target.value = '';
+                        setPhotoPreview('');
+                      } finally {
+                        setIsPreparingPhoto(false);
+                      }
+                    }}
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Upload a clear photo so admins and officers can identify the submitted warrant record faster.
+                  </p>
+                  {photoPreview && (
+                    <div className="mt-3 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 p-2">
+                      <img src={photoPreview} alt="Accused preview" className="h-40 w-full rounded-lg object-cover sm:w-56" />
+                    </div>
+                  )}
+                  {isPreparingPhoto && <p className="mt-2 text-sm text-blue-600">Preparing image...</p>}
+                </div>
                 <div>
                   <Label htmlFor="name">Name of Accused *</Label>
                   <Input
@@ -233,12 +307,13 @@ export function WarrantEncode() {
 
             {/* Action Buttons */}
             <div className="flex flex-col sm:flex-row gap-3 pt-4">
-              <Button type="submit" className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto" disabled={!isBackendReady}>
+              <Button type="submit" className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto" disabled={!isBackendReady || isPreparingPhoto}>
                 Save Warrant
               </Button>
               <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => {
                 reset();
                 setSelectedOfficer('');
+                setPhotoPreview('');
               }}>
                 Clear
               </Button>

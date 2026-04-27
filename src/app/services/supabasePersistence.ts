@@ -9,6 +9,14 @@ interface PersistPayload {
   settings: AppSettings | null;
 }
 
+interface CorePersistPayload {
+  users: User[];
+  warrants: Warrant[];
+  settings: AppSettings | null;
+}
+
+const WARRANT_PHOTOS_BUCKET = 'warrant-photos';
+
 function nullable(value: string | undefined) {
   return value ?? null;
 }
@@ -21,6 +29,8 @@ function toWarrantRow(warrant: Warrant) {
   return {
     id: warrant.id,
     name: warrant.name,
+    photoDataUrl: nullable(warrant.photoDataUrl),
+    photoPath: nullable(warrant.photoPath),
     alias: nullable(warrant.alias),
     caseNumber: warrant.caseNumber,
     offense: warrant.offense,
@@ -47,7 +57,7 @@ function toWarrantRow(warrant: Warrant) {
   };
 }
 
-async function getProfileById(userId: string): Promise<User | null> {
+export async function getProfileById(userId: string): Promise<User | null> {
   if (!isSupabaseConfigured || !supabase) {
     return null;
   }
@@ -97,6 +107,52 @@ export async function loadFromSupabase(): Promise<PersistPayload | null> {
   };
 }
 
+export async function loadCoreFromSupabase(): Promise<CorePersistPayload | null> {
+  if (!isSupabaseConfigured || !supabase) {
+    return null;
+  }
+
+  const [usersResult, warrantsResult, settingsResult] = await Promise.all([
+    supabase.from('app_users').select('*').order('fullName', { ascending: true }),
+    supabase.from('warrants').select('*').order('dateIssued', { ascending: false }),
+    supabase.from('app_settings').select('*').eq('id', 'global').maybeSingle(),
+  ]);
+
+  if (
+    usersResult.error ||
+    warrantsResult.error ||
+    (settingsResult.error &&
+      settingsResult.error.code !== 'PGRST116' &&
+      settingsResult.error.code !== 'PGRST205' &&
+      settingsResult.error.code !== '42P01')
+  ) {
+    return null;
+  }
+
+  return {
+    users: usersResult.data as User[],
+    warrants: warrantsResult.data as Warrant[],
+    settings: (settingsResult.data as AppSettings | null) ?? null,
+  };
+}
+
+export async function loadAuditLogsFromSupabase(): Promise<AuditLog[]> {
+  if (!isSupabaseConfigured || !supabase) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from('audit_logs')
+    .select('*')
+    .order('dateTime', { ascending: false });
+
+  if (error) {
+    return [];
+  }
+
+  return (data as AuditLog[]) ?? [];
+}
+
 export async function getAuthenticatedProfile(): Promise<User | null> {
   if (!isSupabaseConfigured || !supabase) {
     return null;
@@ -111,6 +167,18 @@ export async function getAuthenticatedProfile(): Promise<User | null> {
   }
 
   return getProfileById(session.user.id);
+}
+
+export async function hasAuthenticatedSession(): Promise<boolean> {
+  if (!isSupabaseConfigured || !supabase) {
+    return false;
+  }
+
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  return Boolean(session?.user);
 }
 
 export function subscribeToAuthChanges(
@@ -232,6 +300,63 @@ export async function saveUserToSupabase(user: User): Promise<{ ok: boolean; mes
   }
 
   return { ok: true };
+}
+
+function dataUrlToBlob(dataUrl: string): Blob {
+  const [header, base64Data] = dataUrl.split(',');
+  const mimeMatch = header.match(/data:(.*?);base64/);
+  const mimeType = mimeMatch?.[1] || 'image/jpeg';
+  const binary = atob(base64Data);
+  const bytes = new Uint8Array(binary.length);
+
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+
+  return new Blob([bytes], { type: mimeType });
+}
+
+export async function uploadWarrantPhoto(
+  warrantId: string,
+  photoDataUrl: string,
+): Promise<{ ok: boolean; path?: string; message?: string }> {
+  if (!isSupabaseConfigured || !supabase) {
+    return { ok: false, message: 'Supabase is not configured.' };
+  }
+
+  const filePath = `warrants/${warrantId}/${Date.now()}.jpg`;
+  const blob = dataUrlToBlob(photoDataUrl);
+  const { error } = await supabase.storage
+    .from(WARRANT_PHOTOS_BUCKET)
+    .upload(filePath, blob, {
+      cacheControl: '3600',
+      contentType: blob.type || 'image/jpeg',
+      upsert: false,
+    });
+
+  if (error) {
+    return { ok: false, message: error.message };
+  }
+
+  return { ok: true, path: filePath };
+}
+
+export async function createWarrantPhotoSignedUrl(
+  photoPath: string,
+): Promise<string | null> {
+  if (!isSupabaseConfigured || !supabase) {
+    return null;
+  }
+
+  const { data, error } = await supabase.storage
+    .from(WARRANT_PHOTOS_BUCKET)
+    .createSignedUrl(photoPath, 60 * 60);
+
+  if (error || !data?.signedUrl) {
+    return null;
+  }
+
+  return data.signedUrl;
 }
 
 export async function upsertWarrants(warrants: Warrant[]) {

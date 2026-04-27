@@ -3,9 +3,13 @@ import { AppSettings, AuditLog, User, Warrant } from '../data/models';
 import {
   authenticateWithSupabase,
   createWarrantInSupabase,
+  createWarrantPhotoSignedUrl,
   deleteWarrantById,
   getAuthenticatedProfile,
-  loadFromSupabase,
+  getProfileById,
+  hasAuthenticatedSession,
+  loadAuditLogsFromSupabase,
+  loadCoreFromSupabase,
   registerWithSupabaseAuth,
   saveSettingsToSupabase,
   saveUserToSupabase,
@@ -14,9 +18,11 @@ import {
   subscribeToAuthChanges,
   updateAuthenticatedPassword,
   updateWarrantInSupabase,
+  uploadWarrantPhoto,
   upsertAuditLogs,
 } from '../services/supabasePersistence';
 import { isSupabaseConfigured } from '../../lib/supabase';
+import { isDisplayPending } from '../lib/warrantStatus';
 
 interface LoginResult {
   ok: boolean;
@@ -141,6 +147,9 @@ function normalizeWarrant(warrant: Partial<Warrant>): Warrant {
   return {
     id: warrant.id || generateId(),
     name: warrant.name || '',
+    photoDataUrl: warrant.photoDataUrl,
+    photoPath: warrant.photoPath,
+    photoUrl: warrant.photoUrl,
     alias: warrant.alias || '',
     caseNumber: warrant.caseNumber || '',
     offense: warrant.offense || '',
@@ -210,8 +219,6 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
   };
 
   const isAwaitingApproval = (warrant: Warrant) => warrant.approvalStatus === 'For Approval';
-  const isDisplayPending = (warrant: Warrant) =>
-    warrant.status === 'Pending' && warrant.approvalStatus !== 'Approved';
 
   const withTimeout = async <T,>(promise: Promise<T>, ms: number, message: string): Promise<T> => {
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
@@ -235,8 +242,23 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     timeoutMs = 12000,
   ): Promise<T> => withTimeout(action(), timeoutMs, timeoutMessage);
 
-  const applyRemoteState = async (profileOverride?: User | null) => {
-    const remote = await loadFromSupabase();
+  const hydrateWarrantPhotoUrls = async (items: Warrant[]) => {
+    const next = await Promise.all(
+      items.map(async (warrant) => {
+        if (!warrant.photoPath) {
+          return warrant;
+        }
+
+        const signedUrl = await createWarrantPhotoSignedUrl(warrant.photoPath);
+        return { ...warrant, photoUrl: signedUrl ?? warrant.photoUrl };
+      }),
+    );
+
+    setWarrants(next);
+  };
+
+  const applyCoreRemoteState = async (profileOverride?: User | null) => {
+    const remote = await loadCoreFromSupabase();
     if (!remote) {
       setUsers([]);
       setWarrants([]);
@@ -254,12 +276,24 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
         ? normalizedUsers.find((user) => user.id === currentUser.id) ?? null
         : null);
 
+    const normalizedWarrants = remote.warrants.map((warrant) => normalizeWarrant(warrant));
+
     setUsers(normalizedUsers);
-    setWarrants(remote.warrants.map((warrant) => normalizeWarrant(warrant)));
-    setAuditLogs(remote.auditLogs);
+    setWarrants(normalizedWarrants);
     setSettings(normalizeSettings(remote.settings));
     setCurrentUser(resolvedCurrentUser);
     setRuntimeMessage(null);
+    void hydrateWarrantPhotoUrls(normalizedWarrants);
+  };
+
+  const refreshAuditLogs = async (profileOverride?: User | null) => {
+    if ((profileOverride ?? currentUser)?.role !== 'Admin') {
+      setAuditLogs([]);
+      return;
+    }
+
+    const logs = await loadAuditLogsFromSupabase();
+    setAuditLogs(logs);
   };
 
   useEffect(() => {
@@ -276,14 +310,38 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
       }
 
       try {
-        // Always start localhost on the login screen instead of restoring a prior browser session.
-        await withTimeout(
-          signOutFromSupabase(),
+        const hasSession = await withTimeout(
+          hasAuthenticatedSession(),
           12000,
-          'Timed out while clearing the previous login session.',
+          'Timed out while checking the active login session.',
         );
         if (!active) return;
-        failSafeReset(null);
+
+        if (!hasSession) {
+          failSafeReset(null);
+          return;
+        }
+
+        const profile = await withTimeout(
+          getAuthenticatedProfile(),
+          12000,
+          'Timed out while restoring the saved login session.',
+        );
+        if (!active) return;
+
+        if (!profile) {
+          failSafeReset('A login session was found, but the user profile could not be loaded from Supabase.');
+          return;
+        }
+
+        const normalizedProfile = normalizeUser(profile);
+        await withTimeout(
+          applyCoreRemoteState(normalizedProfile),
+          12000,
+          'Timed out while loading your workspace from Supabase.',
+        );
+        if (!active) return;
+        void refreshAuditLogs(normalizedProfile);
       } catch (error) {
         if (active) {
           const message =
@@ -301,45 +359,55 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
 
     void hydrate();
 
-    const subscription = subscribeToAuthChanges(async (_event, session) => {
+    const subscription = subscribeToAuthChanges((event, session) => {
       if (!active) return;
 
-      try {
-        if (!session?.user) {
-          failSafeReset(null);
-          return;
-        }
+      window.setTimeout(() => {
+        void (async () => {
+          try {
+            if (!session?.user) {
+              if (event === 'SIGNED_OUT') {
+                failSafeReset(null);
+              }
+              return;
+            }
 
-        const profile = await withTimeout(
-          getAuthenticatedProfile(),
-          12000,
-          'Timed out while refreshing the signed-in profile.',
-        );
-        if (!active) return;
+            const profile = await withTimeout(
+              getProfileById(session.user.id),
+              20000,
+              'Timed out while refreshing the signed-in profile.',
+            );
+            if (!active) return;
 
-        if (!profile) {
-          failSafeReset('A login session was found, but the user profile could not be loaded from Supabase.');
-          return;
-        }
+            if (!profile) {
+              setRuntimeMessage('A login session was found, but the user profile could not be loaded from Supabase.');
+              return;
+            }
 
-        await withTimeout(
-          applyRemoteState(normalizeUser(profile)),
-          12000,
-          'Timed out while refreshing system data from Supabase.',
-        );
-      } catch (error) {
-        if (active) {
-          const message =
-            error instanceof Error
-              ? error.message
-              : 'The system could not refresh its data after the sign-in state changed.';
-          failSafeReset(message);
-        }
-      } finally {
-        if (active) {
-          setIsLoading(false);
-        }
-      }
+            const normalizedProfile = normalizeUser(profile);
+            setCurrentUser(normalizedProfile);
+            await withTimeout(
+              applyCoreRemoteState(normalizedProfile),
+              20000,
+              'Timed out while refreshing system data from Supabase.',
+            );
+            if (!active) return;
+            void refreshAuditLogs(normalizedProfile);
+          } catch (error) {
+            if (active) {
+              const message =
+                error instanceof Error
+                  ? error.message
+                  : 'The system could not refresh its data after the sign-in state changed.';
+              setRuntimeMessage(message);
+            }
+          } finally {
+            if (active) {
+              setIsLoading(false);
+            }
+          }
+        })();
+      }, 0);
     });
 
     return () => {
@@ -348,14 +416,17 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  useEffect(() => {
-    if (!isLoading && isSupabaseConfigured) {
-      void upsertAuditLogs(auditLogs);
-    }
-  }, [auditLogs, isLoading]);
+  const persistAuditLog = async (entry: AuditLog) => {
+    if (!isSupabaseConfigured) return;
 
-  const logAction = (action: string, module: string) => {
-    const actor = currentUser?.fullName ?? 'System';
+    await upsertAuditLogs([entry]);
+    if (currentUser?.role === 'Admin') {
+      await refreshAuditLogs(currentUser);
+    }
+  };
+
+  const logAction = (action: string, module: string, actorOverride?: string) => {
+    const actor = actorOverride ?? currentUser?.fullName ?? 'System';
     const entry: AuditLog = {
       id: generateId(),
       user: actor,
@@ -364,7 +435,7 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
       dateTime: now(),
       ipAddress: '127.0.0.1',
     };
-    setAuditLogs((prev) => [entry, ...prev]);
+    void persistAuditLog(entry);
   };
 
   const canOfficerModifyWarrant = (warrant: Warrant) =>
@@ -390,7 +461,8 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
       return { ok: false, message: 'Your account is inactive. Please contact an administrator.' };
     }
 
-    await applyRemoteState(normalizeUser(found.user));
+    setCurrentUser(normalizeUser(found.user));
+    setRuntimeMessage(null);
     return { ok: true };
   };
 
@@ -420,20 +492,11 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
 
     const profile = await getAuthenticatedProfile();
     if (profile) {
-      await applyRemoteState(normalizeUser(profile));
+      await applyCoreRemoteState(normalizeUser(profile));
+      void refreshAuditLogs(normalizeUser(profile));
     }
 
-    setAuditLogs((prev) => [
-      {
-        id: generateId(),
-        user: fullName.trim(),
-        action: 'Created warrant officer account',
-        module: 'Registration',
-        dateTime: now(),
-        ipAddress: '127.0.0.1',
-      },
-      ...prev,
-    ]);
+    logAction('Created warrant officer account', 'Registration', fullName.trim());
 
     return { ok: true, message: result.message || 'Account created successfully.' };
   };
@@ -554,11 +617,34 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     }
 
     const createdByAdmin = currentUser?.role === 'Admin';
+    const warrantId = generateId();
+    let photoPath: string | undefined;
+
+    if (warrant.photoDataUrl) {
+      const uploadedPhoto = await runBackendAction(
+        () => uploadWarrantPhoto(warrantId, warrant.photoDataUrl as string),
+        'Timed out while uploading the warrant photo. Please try again.',
+      );
+      if (!uploadedPhoto.ok || !uploadedPhoto.path) {
+        return {
+          ok: false,
+          message: `Unable to upload warrant photo to Supabase Storage: ${uploadedPhoto.message}`,
+        };
+      }
+      photoPath = uploadedPhoto.path;
+    }
+
+    const photoUrl = photoPath
+      ? await createWarrantPhotoSignedUrl(photoPath)
+      : warrant.photoDataUrl;
     const newWarrant: Warrant = {
       ...warrant,
-      id: generateId(),
+      id: warrantId,
       status: 'Pending',
       approvalStatus: createdByAdmin ? 'Approved' : 'For Approval',
+      photoPath,
+      photoUrl: photoUrl ?? undefined,
+      photoDataUrl: undefined,
       submittedById: currentUser?.id ?? undefined,
       submittedBy: currentUser?.fullName ?? 'System',
       submittedAt: now(),
@@ -762,6 +848,7 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     const updatedWarrant: Warrant = {
       ...target,
       approvalStatus: 'Approved',
+      status: target.status === 'Pending' ? 'Pending' : target.status,
       approvedBy: currentUser.fullName,
       approvedAt: now(),
     };

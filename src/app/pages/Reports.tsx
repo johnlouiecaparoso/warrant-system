@@ -1,4 +1,4 @@
-import { Suspense, lazy, useMemo, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Label } from '../components/ui/label';
 import { Input } from '../components/ui/input';
@@ -23,6 +23,7 @@ import { FileText, Download } from 'lucide-react';
 import { useSystem } from '../context/SystemContext';
 import { toast } from 'sonner';
 import { ChartCardFallback } from '../components/ChartCardFallback';
+import { getDisplayStatus, isDisplayPending } from '../lib/warrantStatus';
 
 const ReportsChart = lazy(() =>
   import('../components/ReportsChart').then((module) => ({ default: module.ReportsChart })),
@@ -31,6 +32,7 @@ const ReportsChart = lazy(() =>
 const reportTitles = {
   'daily-served': 'Daily Served Warrants Report',
   'monthly-served': 'Monthly Served Warrants Report',
+  approved: 'Approved Warrants Report',
   pending: 'Pending Warrants Report',
   unserved: 'Unserved Warrants Report',
   cancelled: 'Cancelled Warrants Report',
@@ -59,10 +61,28 @@ function downloadBlob(blob: Blob, filename: string) {
 export function Reports() {
   const { warrants, settings } = useSystem();
   const today = new Date();
-  const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  const allRelevantDates = useMemo(
+    () =>
+      warrants
+        .flatMap((warrant) => [warrant.dateIssued, warrant.dateServed, warrant.approvedAt, warrant.submittedAt])
+        .filter((value): value is string => Boolean(value))
+        .map((value) => new Date(value))
+        .filter((value) => !Number.isNaN(value.getTime()))
+        .sort((a, b) => a.getTime() - b.getTime()),
+    [warrants],
+  );
+  const defaultStartDate = (allRelevantDates[0] ?? today).toISOString().slice(0, 10);
   const [reportType, setReportType] = useState<ReportType>('daily-served');
-  const [startDate, setStartDate] = useState(startOfMonth.toISOString().slice(0, 10));
+  const [startDate, setStartDate] = useState(defaultStartDate);
   const [endDate, setEndDate] = useState(today.toISOString().slice(0, 10));
+  const [hasInitializedRange, setHasInitializedRange] = useState(false);
+
+  useEffect(() => {
+    if (!hasInitializedRange && warrants.length > 0) {
+      setStartDate(defaultStartDate);
+      setHasInitializedRange(true);
+    }
+  }, [defaultStartDate, hasInitializedRange, warrants.length]);
 
   const hasInvalidDateRange = startDate > endDate;
 
@@ -74,20 +94,29 @@ export function Reports() {
     return target >= start && target <= end;
   };
 
-  const filteredWarrants = useMemo(() => {
-    const byRange = warrants.filter((w) => {
+  const warrantsInRange = useMemo(() => {
+    return warrants.filter((w) => {
       if (reportType === 'daily-served' || reportType === 'monthly-served') {
         return isWithinRange(w.dateServed || w.dateIssued);
       }
+      if (reportType === 'approved') {
+        return isWithinRange(w.approvedAt || w.submittedAt || w.dateIssued);
+      }
       return isWithinRange(w.dateIssued);
     });
+  }, [hasInvalidDateRange, reportType, warrants, startDate, endDate]);
 
-    switch (reportType) {
+  const filteredWarrants = useMemo(() => {
+    const byRange = warrantsInRange;
+
+      switch (reportType) {
       case 'daily-served':
       case 'monthly-served':
         return byRange.filter((w) => w.status === 'Served');
+      case 'approved':
+        return byRange.filter((w) => getDisplayStatus(w) === 'Approved');
       case 'pending':
-        return byRange.filter((w) => w.status === 'Pending');
+        return byRange.filter((w) => isDisplayPending(w));
       case 'unserved':
         return byRange.filter((w) => w.status === 'Unserved');
       case 'cancelled':
@@ -95,19 +124,22 @@ export function Reports() {
       default:
         return byRange;
     }
-  }, [hasInvalidDateRange, reportType, warrants, startDate, endDate]);
+  }, [reportType, warrantsInRange]);
 
   const chartData = [
-    { id: 'pending', status: 'Pending', count: filteredWarrants.filter((w) => w.status === 'Pending').length },
-    { id: 'served', status: 'Served', count: filteredWarrants.filter((w) => w.status === 'Served').length },
-    { id: 'unserved', status: 'Unserved', count: filteredWarrants.filter((w) => w.status === 'Unserved').length },
-    { id: 'cancelled', status: 'Cancelled', count: filteredWarrants.filter((w) => w.status === 'Cancelled').length },
+    { id: 'pending', status: 'Pending', count: warrantsInRange.filter((w) => isDisplayPending(w)).length },
+    { id: 'approved', status: 'Approved', count: warrantsInRange.filter((w) => getDisplayStatus(w) === 'Approved').length },
+    { id: 'served', status: 'Served', count: warrantsInRange.filter((w) => w.status === 'Served').length },
+    { id: 'unserved', status: 'Unserved', count: warrantsInRange.filter((w) => w.status === 'Unserved').length },
+    { id: 'cancelled', status: 'Cancelled', count: warrantsInRange.filter((w) => w.status === 'Cancelled').length },
   ];
 
   const statusBadgeClass = (status: string) => {
     switch (status) {
       case 'Pending':
         return 'bg-orange-100 text-orange-700';
+      case 'Approved':
+        return 'bg-emerald-100 text-emerald-700';
       case 'Served':
         return 'bg-green-100 text-green-700';
       case 'Unserved':
@@ -161,7 +193,7 @@ export function Reports() {
                         <td>${escapeHtml(w.name)}</td>
                         <td>${escapeHtml(w.caseNumber)}</td>
                         <td>${escapeHtml(w.offense)}</td>
-                        <td>${escapeHtml(w.status)}</td>
+                        <td>${escapeHtml(getDisplayStatus(w))}</td>
                         <td>${escapeHtml(w.dateIssued)}</td>
                         <td>${escapeHtml(w.assignedOfficer || 'Not assigned')}</td>
                       </tr>`,
@@ -200,7 +232,7 @@ export function Reports() {
             <td>${escapeHtml(w.name)}</td>
             <td>${escapeHtml(w.caseNumber)}</td>
             <td>${escapeHtml(w.offense)}</td>
-            <td>${escapeHtml(w.status)}</td>
+            <td>${escapeHtml(getDisplayStatus(w))}</td>
             <td>${escapeHtml(w.dateIssued)}</td>
             <td>${escapeHtml(w.assignedOfficer || 'Not assigned')}</td>
             ${reportType.includes('served') ? `<td>${escapeHtml(w.dateServed || 'N/A')}</td>` : ''}
@@ -263,6 +295,7 @@ export function Reports() {
                 <SelectContent>
                   <SelectItem value="daily-served">Daily Served Warrants</SelectItem>
                   <SelectItem value="monthly-served">Monthly Served Warrants</SelectItem>
+                  <SelectItem value="approved">Approved Warrants</SelectItem>
                   <SelectItem value="pending">Pending Warrants</SelectItem>
                   <SelectItem value="unserved">Unserved Warrants</SelectItem>
                   <SelectItem value="cancelled">Cancelled Warrants</SelectItem>
@@ -343,8 +376,8 @@ export function Reports() {
                     <TableCell>{warrant.caseNumber}</TableCell>
                     <TableCell>{warrant.offense}</TableCell>
                     <TableCell>
-                      <Badge className={statusBadgeClass(warrant.status)}>
-                        {warrant.status}
+                      <Badge className={statusBadgeClass(getDisplayStatus(warrant))}>
+                        {getDisplayStatus(warrant)}
                       </Badge>
                     </TableCell>
                     <TableCell>{warrant.dateIssued}</TableCell>

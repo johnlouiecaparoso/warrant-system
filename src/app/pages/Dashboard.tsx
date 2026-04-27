@@ -1,10 +1,11 @@
 import { Suspense, lazy, useMemo } from 'react';
-import { FileText, Clock, CheckCircle, XCircle, Ban } from 'lucide-react';
+import { FileText, Clock, CheckCircle, XCircle, Ban, BadgeCheck } from 'lucide-react';
 import { useSystem } from '../context/SystemContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { ChartCardFallback } from '../components/ChartCardFallback';
+import { getDisplayStatus, isDisplayPending } from '../lib/warrantStatus';
 
 const DashboardCharts = lazy(() =>
   import('../components/DashboardCharts').then((module) => ({ default: module.DashboardCharts })),
@@ -14,7 +15,8 @@ export function Dashboard() {
   const { warrants, auditLogs, overdueCount } = useSystem();
 
   const totalWarrants = warrants.length;
-  const pendingWarrants = warrants.filter((w) => w.status === 'Pending').length;
+  const pendingWarrants = warrants.filter((w) => isDisplayPending(w)).length;
+  const approvedWarrants = warrants.filter((w) => getDisplayStatus(w) === 'Approved').length;
   const servedWarrants = warrants.filter((w) => w.status === 'Served').length;
   const unservedWarrants = warrants.filter((w) => w.status === 'Unserved').length;
   const cancelledWarrants = warrants.filter((w) => w.status === 'Cancelled').length;
@@ -41,16 +43,30 @@ export function Dashboard() {
 
   const pieData = [
     { id: 'pending', name: 'Pending', value: pendingWarrants, color: '#f97316' },
+    { id: 'approved', name: 'Approved', value: approvedWarrants, color: '#10b981' },
     { id: 'served', name: 'Served', value: servedWarrants, color: '#22c55e' },
     { id: 'unserved', name: 'Unserved', value: unservedWarrants, color: '#ef4444' },
     { id: 'cancelled', name: 'Cancelled', value: cancelledWarrants, color: '#6b7280' },
   ];
   const nonZeroPieData = pieData.filter((item) => item.value > 0);
+  const recentWarrantUpdates = useMemo(
+    () =>
+      [...warrants]
+        .sort((a, b) => {
+          const left = new Date(a.approvedAt || a.submittedAt || a.dateIssued).getTime();
+          const right = new Date(b.approvedAt || b.submittedAt || b.dateIssued).getTime();
+          return right - left;
+        })
+        .slice(0, 5),
+    [warrants],
+  );
 
   const statusBadgeClass = (status: string) => {
     switch (status) {
       case 'Pending':
         return 'bg-orange-100 text-orange-700';
+      case 'Approved':
+        return 'bg-emerald-100 text-emerald-700';
       case 'Served':
         return 'bg-green-100 text-green-700';
       case 'Unserved':
@@ -69,7 +85,7 @@ export function Dashboard() {
         <p className="text-gray-600">Overview of warrant management statistics</p>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Total Warrants</CardTitle>
@@ -87,6 +103,16 @@ export function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-orange-600">{pendingWarrants}</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-gray-600">Approved</CardTitle>
+            <BadgeCheck className="h-4 w-4 text-emerald-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-emerald-600">{approvedWarrants}</div>
           </CardContent>
         </Card>
 
@@ -149,12 +175,12 @@ export function Dashboard() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {warrants.slice(0, 5).map((warrant) => (
+                    {recentWarrantUpdates.map((warrant) => (
                       <TableRow key={warrant.id}>
                         <TableCell className="font-medium">{warrant.name}</TableCell>
                         <TableCell>{warrant.caseNumber}</TableCell>
                         <TableCell>
-                          <Badge className={statusBadgeClass(warrant.status)}>{warrant.status}</Badge>
+                          <Badge className={statusBadgeClass(getDisplayStatus(warrant))}>{getDisplayStatus(warrant)}</Badge>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -162,12 +188,12 @@ export function Dashboard() {
                 </Table>
               </div>
               <div className="space-y-3 sm:hidden">
-                {warrants.slice(0, 5).map((warrant) => (
+                {recentWarrantUpdates.map((warrant) => (
                   <div key={warrant.id} className="rounded-lg border p-3">
                     <p className="font-medium text-gray-900">{warrant.name}</p>
                     <p className="text-sm text-gray-600">{warrant.caseNumber}</p>
                     <div className="mt-2">
-                      <Badge className={statusBadgeClass(warrant.status)}>{warrant.status}</Badge>
+                      <Badge className={statusBadgeClass(getDisplayStatus(warrant))}>{getDisplayStatus(warrant)}</Badge>
                     </div>
                   </div>
                 ))}

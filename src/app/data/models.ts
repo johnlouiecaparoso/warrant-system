@@ -1,6 +1,9 @@
 export interface Warrant {
   id: string;
   name: string;
+  photoDataUrl?: string;
+  photoPath?: string;
+  photoUrl?: string;
   alias: string;
   caseNumber: string;
   offense: string;

@@ -55,6 +55,8 @@ create unique index if not exists idx_app_users_email on public.app_users (email
 create table if not exists public.warrants (
   id text primary key,
   name text not null,
+  "photoDataUrl" text,
+  "photoPath" text,
   alias text,
   "caseNumber" text not null,
   offense text not null,
@@ -84,6 +86,8 @@ create table if not exists public.warrants (
 );
 
 alter table public.warrants add column if not exists "approvalStatus" text;
+alter table public.warrants add column if not exists "photoDataUrl" text;
+alter table public.warrants add column if not exists "photoPath" text;
 alter table public.warrants add column if not exists "submittedById" text;
 alter table public.warrants add column if not exists "submittedBy" text;
 alter table public.warrants add column if not exists "submittedAt" text;
@@ -251,6 +255,7 @@ alter table public.app_users enable row level security;
 alter table public.warrants enable row level security;
 alter table public.audit_logs enable row level security;
 alter table public.app_settings enable row level security;
+alter table storage.objects enable row level security;
 
 drop policy if exists app_users_select on public.app_users;
 create policy app_users_select on public.app_users
@@ -331,6 +336,46 @@ for update
 to authenticated
 using (public.current_app_role() = 'Admin')
 with check (public.current_app_role() = 'Admin');
+
+drop policy if exists warrant_photos_select_active_users on storage.objects;
+create policy warrant_photos_select_active_users on storage.objects
+for select
+to authenticated
+using (
+  bucket_id = 'warrant-photos'
+  and public.is_active_user()
+);
+
+drop policy if exists warrant_photos_insert_active_users on storage.objects;
+create policy warrant_photos_insert_active_users on storage.objects
+for insert
+to authenticated
+with check (
+  bucket_id = 'warrant-photos'
+  and public.is_active_user()
+);
+
+drop policy if exists warrant_photos_update_admin_only on storage.objects;
+create policy warrant_photos_update_admin_only on storage.objects
+for update
+to authenticated
+using (
+  bucket_id = 'warrant-photos'
+  and public.current_app_role() = 'Admin'
+)
+with check (
+  bucket_id = 'warrant-photos'
+  and public.current_app_role() = 'Admin'
+);
+
+drop policy if exists warrant_photos_delete_admin_only on storage.objects;
+create policy warrant_photos_delete_admin_only on storage.objects
+for delete
+to authenticated
+using (
+  bucket_id = 'warrant-photos'
+  and public.current_app_role() = 'Admin'
+);
 
 -- To promote the first admin after sign-up, run this once in SQL Editor:
 -- update public.app_users
