@@ -99,13 +99,13 @@ export function Layout() {
         ? warrants.filter((w) => w.approvalStatus === 'Approved' && ownsWarrant(w.submittedBy)).length
         : 0;
 
-    const list: Array<{ id: string; title: string; description: string; icon: JSX.Element; route: string }> = [];
+    const list: Array<{ id: string; title: string; description: string; icon: React.JSX.Element; route: string }> = [];
 
     if (settings.notifyPending && currentUser?.role === 'Admin' && awaitingApproval > 0) {
       list.push({
         id: 'approval-queue',
         title: 'Awaiting Approval',
-        description: `${awaitingApproval} warrant submission(s) waiting for admin approval.`,
+        description: `${awaitingApproval} spot report submission(s) waiting for admin approval.`,
         icon: <ShieldAlert className="w-4 h-4 text-blue-600" />,
         route: '/warrants',
       });
@@ -114,8 +114,8 @@ export function Layout() {
     if (settings.notifyPending && approvedOwnSubmissions > 0) {
       list.push({
         id: 'approved-submissions',
-        title: 'Approved Warrants',
-        description: `${approvedOwnSubmissions} of your submitted warrant(s) were approved by admin.`,
+        title: 'Approved Spot Reports',
+        description: `${approvedOwnSubmissions} of your submitted spot report(s) were approved by admin.`,
         icon: <CheckCircle2 className="w-4 h-4 text-emerald-600" />,
         route: '/warrants',
       });
@@ -124,8 +124,8 @@ export function Layout() {
     if (unservedWarrants > 0) {
       list.push({
         id: 'unserved-warrants',
-        title: 'Unserved Warrants',
-        description: `${unservedWarrants} warrant(s) marked unserved.`,
+        title: 'Unserved Spot Reports',
+        description: `${unservedWarrants} spot report(s) marked unserved.`,
         icon: <ShieldAlert className="w-4 h-4 text-red-600" />,
         route: '/warrants',
       });
@@ -134,8 +134,8 @@ export function Layout() {
     if (settings.notifyOverdue && overdueCount > 0) {
       list.push({
         id: 'overdue-warrants',
-        title: 'Overdue Warrants',
-        description: `${overdueCount} pending warrant(s) older than 30 days.`,
+        title: 'Overdue Spot Reports',
+        description: `${overdueCount} pending spot report(s) older than 30 days.`,
         icon: <ShieldAlert className="w-4 h-4 text-amber-700" />,
         route: '/warrants',
       });
@@ -162,8 +162,8 @@ export function Layout() {
 
   const navItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
-    { icon: FileText, label: 'Add Warrant', path: '/warrants/encode' },
-    { icon: FileText, label: 'Warrant Records', path: '/warrants' },
+    { icon: FileText, label: 'Spot Report', path: '/warrants/encode' },
+    { icon: FileText, label: 'Spot Report Records', path: '/warrants' },
     { icon: SearchIcon, label: 'Search', path: '/search' },
     { icon: BarChart3, label: 'Reports', path: '/reports' },
     { icon: Users, label: 'User Management', path: '/users' },
@@ -173,8 +173,8 @@ export function Layout() {
 
   const pageTitleMap: Record<string, string> = {
     '/': 'Dashboard',
-    '/warrants/encode': 'Add Warrant',
-    '/warrants': 'Warrant Records',
+    '/warrants/encode': 'Spot Report',
+    '/warrants': 'Spot Report Records',
     '/search': 'Search',
     '/reports': 'Reports',
     '/users': 'User Management',
@@ -209,14 +209,14 @@ export function Layout() {
             <div className="flex min-w-0 items-center gap-2 sm:gap-3">
               <img
                 src="/img/logo.jpg?v=2"
-                alt="Warrant system logo"
+                alt="Spot report system logo"
                 className="h-9 w-9 rounded-lg object-cover shadow-sm sm:h-10 sm:w-10"
               />
               <div className="min-w-0 max-w-[calc(100vw-12.5rem)] sm:max-w-none">
                 <h1 className="line-clamp-2 text-xs font-bold leading-tight text-slate-900 sm:line-clamp-1 sm:text-base">
                   {settings.officeName}
                 </h1>
-                <p className="hidden text-xs text-slate-500 sm:block">Warrant Management System</p>
+                <p className="hidden text-xs text-slate-500 sm:block">Spot Report Management System</p>
               </div>
             </div>
           </div>
@@ -227,7 +227,7 @@ export function Layout() {
                 <Input
                   value={globalSearch}
                   onChange={(e) => setGlobalSearch(e.target.value)}
-                  placeholder="Global search warrants..."
+                  placeholder="Global search spot reports..."
                   className="pl-9 bg-gray-50"
                 />
               </div>
@@ -315,7 +315,7 @@ export function Layout() {
             <Input
               value={globalSearch}
               onChange={(e) => setGlobalSearch(e.target.value)}
-              placeholder="Search warrants, cases, or offenses"
+              placeholder="Search spot reports, cases, or offenses"
               className="h-11 rounded-xl border-slate-200 bg-slate-50 pl-9"
             />
           </form>

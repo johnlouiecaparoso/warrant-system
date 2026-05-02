@@ -15,7 +15,7 @@ export interface Warrant {
   assignedOfficer: string;
   dateAssigned?: string;
   assignmentNotes?: string;
-  status: 'Pending' | 'Served' | 'Unserved' | 'Cancelled';
+  status: 'Pending' | 'Served' | 'Unserved' | 'Cancelled' | 'Quashed';
   approvalStatus: 'For Approval' | 'Approved';
   submittedById?: string;
   submittedBy?: string;

@@ -16,10 +16,11 @@ export function Dashboard() {
 
   const totalWarrants = warrants.length;
   const pendingWarrants = warrants.filter((w) => isDisplayPending(w)).length;
-  const approvedWarrants = warrants.filter((w) => getDisplayStatus(w) === 'Approved').length;
+  const approvedWarrants = warrants.filter((w) => getDisplayStatus(w) === 'Arrested').length;
   const servedWarrants = warrants.filter((w) => w.status === 'Served').length;
   const unservedWarrants = warrants.filter((w) => w.status === 'Unserved').length;
   const cancelledWarrants = warrants.filter((w) => w.status === 'Cancelled').length;
+  const quashedWarrants = warrants.filter((w) => w.status === 'Quashed').length;
 
   const monthlyData = useMemo(() => {
     const result: Array<{ id: string; month: string; warrants: number }> = [];
@@ -42,11 +43,12 @@ export function Dashboard() {
   }, [warrants]);
 
   const pieData = [
-    { id: 'pending', name: 'Pending', value: pendingWarrants, color: '#f97316' },
-    { id: 'approved', name: 'Approved', value: approvedWarrants, color: '#10b981' },
+    { id: 'atlarge', name: 'At Large', value: pendingWarrants, color: '#f97316' },
+    { id: 'arrested', name: 'Arrested', value: approvedWarrants, color: '#10b981' },
     { id: 'served', name: 'Served', value: servedWarrants, color: '#22c55e' },
     { id: 'unserved', name: 'Unserved', value: unservedWarrants, color: '#ef4444' },
-    { id: 'cancelled', name: 'Cancelled', value: cancelledWarrants, color: '#6b7280' },
+    { id: 'dismissed', name: 'Dismissed', value: cancelledWarrants, color: '#6b7280' },
+    { id: 'quashed', name: 'Quashed', value: quashedWarrants, color: '#8b5cf6' },
   ];
   const nonZeroPieData = pieData.filter((item) => item.value > 0);
   const recentWarrantUpdates = useMemo(
@@ -63,16 +65,18 @@ export function Dashboard() {
 
   const statusBadgeClass = (status: string) => {
     switch (status) {
-      case 'Pending':
+      case 'At Large':
         return 'bg-orange-100 text-orange-700';
-      case 'Approved':
+      case 'Arrested':
         return 'bg-emerald-100 text-emerald-700';
       case 'Served':
         return 'bg-green-100 text-green-700';
       case 'Unserved':
         return 'bg-red-100 text-red-700';
-      case 'Cancelled':
+      case 'Dismissed':
         return 'bg-gray-100 text-gray-700';
+      case 'Quashed':
+        return 'bg-purple-100 text-purple-700';
       default:
         return 'bg-gray-100 text-gray-700';
     }
@@ -98,7 +102,7 @@ export function Dashboard() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Pending</CardTitle>
+            <CardTitle className="text-sm font-medium text-gray-600">At Large</CardTitle>
             <Clock className="h-4 w-4 text-orange-600" />
           </CardHeader>
           <CardContent>
@@ -108,7 +112,7 @@ export function Dashboard() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Approved</CardTitle>
+            <CardTitle className="text-sm font-medium text-gray-600">Arrested</CardTitle>
             <BadgeCheck className="h-4 w-4 text-emerald-600" />
           </CardHeader>
           <CardContent>
@@ -138,11 +142,21 @@ export function Dashboard() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Cancelled</CardTitle>
+            <CardTitle className="text-sm font-medium text-gray-600">Dismissed</CardTitle>
             <Ban className="h-4 w-4 text-gray-600" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-gray-600">{cancelledWarrants}</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-gray-600">Quashed</CardTitle>
+            <Ban className="h-4 w-4 text-purple-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-purple-600">{quashedWarrants}</div>
           </CardContent>
         </Card>
       </div>
@@ -227,7 +241,7 @@ export function Dashboard() {
         <CardContent>
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-xl bg-white/70 p-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Pending</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">At Large</p>
               <p className="mt-1 text-sm text-orange-900">{pendingWarrants} warrants pending assignment</p>
             </div>
             <div className="rounded-xl bg-white/70 p-3">

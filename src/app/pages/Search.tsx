@@ -100,7 +100,7 @@ export function Search() {
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <div>
-              <Label htmlFor="searchName">Name of Accused</Label>
+              <Label htmlFor="searchName">Name of Wanted Person</Label>
               <Input
                 id="searchName"
                 value={searchName}

@@ -44,6 +44,7 @@ function toWarrantRow(warrant: Warrant) {
     assignmentNotes: nullable(warrant.assignmentNotes),
     status: warrant.status,
     approvalStatus: warrant.approvalStatus,
+    submittedById: nullable(warrant.submittedById),
     submittedBy: nullable(warrant.submittedBy),
     submittedAt: nullable(warrant.submittedAt),
     approvedBy: nullable(warrant.approvedBy),
@@ -54,6 +55,44 @@ function toWarrantRow(warrant: Warrant) {
     servedRemarks: nullable(warrant.servedRemarks),
     reasonUnserved: nullable(warrant.reasonUnserved),
     nextAction: nullable(warrant.nextAction),
+  };
+}
+
+function fromWarrantRow(row: Record<string, unknown>): Warrant {
+  return {
+    id: (row.id as string) || '',
+    name: (row.name as string) || '',
+    photoDataUrl: row.photoDataUrl as string | undefined,
+    photoPath:
+      (row.photoPath as string | undefined) ?? (row.photopath as string | undefined),
+    photoUrl: row.photoUrl as string | undefined,
+    alias: (row.alias as string) || '',
+    caseNumber: (row.caseNumber as string) || '',
+    offense: (row.offense as string) || '',
+    court: (row.court as string) || '',
+    judge: (row.judge as string) || '',
+    dateIssued: (row.dateIssued as string) || '',
+    barangay: (row.barangay as string) || '',
+    address: (row.address as string) || '',
+    assignedOfficer: (row.assignedOfficer as string) || '',
+    dateAssigned: row.dateAssigned as string | undefined,
+    assignmentNotes: row.assignmentNotes as string | undefined,
+    status: (row.status as Warrant['status']) || 'Pending',
+    approvalStatus:
+      (row.approvalStatus as Warrant['approvalStatus']) === 'Approved'
+        ? 'Approved'
+        : 'For Approval',
+    submittedById: row.submittedById as string | undefined,
+    submittedBy: row.submittedBy as string | undefined,
+    submittedAt: row.submittedAt as string | undefined,
+    approvedBy: row.approvedBy as string | undefined,
+    approvedAt: row.approvedAt as string | undefined,
+    remarks: (row.remarks as string) || '',
+    dateServed: row.dateServed as string | undefined,
+    placeServed: row.placeServed as string | undefined,
+    servedRemarks: row.servedRemarks as string | undefined,
+    reasonUnserved: row.reasonUnserved as string | undefined,
+    nextAction: row.nextAction as string | undefined,
   };
 }
 
@@ -101,7 +140,7 @@ export async function loadFromSupabase(): Promise<PersistPayload | null> {
 
   return {
     users: usersResult.data as User[],
-    warrants: warrantsResult.data as Warrant[],
+    warrants: (warrantsResult.data as Record<string, unknown>[]).map(fromWarrantRow),
     auditLogs: logsResult.data as AuditLog[],
     settings: (settingsResult.data as AppSettings | null) ?? null,
   };
@@ -131,7 +170,7 @@ export async function loadCoreFromSupabase(): Promise<CorePersistPayload | null>
 
   return {
     users: usersResult.data as User[],
-    warrants: warrantsResult.data as Warrant[],
+    warrants: (warrantsResult.data as Record<string, unknown>[]).map(fromWarrantRow),
     settings: (settingsResult.data as AppSettings | null) ?? null,
   };
 }

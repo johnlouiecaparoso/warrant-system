@@ -96,10 +96,26 @@ export function Reports() {
 
   const warrantsInRange = useMemo(() => {
     return warrants.filter((w) => {
-      if (reportType === 'daily-served' || reportType === 'monthly-served') {
+      if (reportType === 'daily-served') {
+        // Daily served shows arrested/approved warrants - include if approved or in date range
+        // If approved, it counts even without approvedAt date
+        if (w.approvalStatus === 'Approved') {
+          return true;
+        }
+        return isWithinRange(w.approvedAt || w.submittedAt || w.dateIssued);
+      }
+      if (reportType === 'monthly-served') {
+        // Monthly served shows actually served warrants
+        if (w.status === 'Served' && !w.dateServed) {
+          return true;
+        }
         return isWithinRange(w.dateServed || w.dateIssued);
       }
       if (reportType === 'approved') {
+        // Show approved warrants - if approved, include regardless of date
+        if (w.approvalStatus === 'Approved') {
+          return true;
+        }
         return isWithinRange(w.approvedAt || w.submittedAt || w.dateIssued);
       }
       return isWithinRange(w.dateIssued);
@@ -109,12 +125,13 @@ export function Reports() {
   const filteredWarrants = useMemo(() => {
     const byRange = warrantsInRange;
 
-      switch (reportType) {
+    switch (reportType) {
       case 'daily-served':
+        return byRange.filter((w) => getDisplayStatus(w) === 'Arrested');
       case 'monthly-served':
         return byRange.filter((w) => w.status === 'Served');
       case 'approved':
-        return byRange.filter((w) => getDisplayStatus(w) === 'Approved');
+        return byRange.filter((w) => getDisplayStatus(w) === 'Arrested');
       case 'pending':
         return byRange.filter((w) => isDisplayPending(w));
       case 'unserved':
@@ -127,8 +144,8 @@ export function Reports() {
   }, [reportType, warrantsInRange]);
 
   const chartData = [
-    { id: 'pending', status: 'Pending', count: warrantsInRange.filter((w) => isDisplayPending(w)).length },
-    { id: 'approved', status: 'Approved', count: warrantsInRange.filter((w) => getDisplayStatus(w) === 'Approved').length },
+    { id: 'pending', status: 'At Large', count: warrantsInRange.filter((w) => isDisplayPending(w)).length },
+    { id: 'arrested', status: 'Arrested', count: warrantsInRange.filter((w) => getDisplayStatus(w) === 'Arrested').length },
     { id: 'served', status: 'Served', count: warrantsInRange.filter((w) => w.status === 'Served').length },
     { id: 'unserved', status: 'Unserved', count: warrantsInRange.filter((w) => w.status === 'Unserved').length },
     { id: 'cancelled', status: 'Cancelled', count: warrantsInRange.filter((w) => w.status === 'Cancelled').length },
@@ -177,11 +194,11 @@ export function Reports() {
             <thead>
               <tr>
                 <th>Name</th>
-                <th>Case Number</th>
-                <th>Offense</th>
-                <th>Status</th>
+                <th>Law Violated/Offense</th>
+                <th>Criminal Case Number</th>
+                <th>Issuing Court</th>
                 <th>Date Issued</th>
-                <th>Assigned Officer</th>
+                <th>Date Received</th>
               </tr>
             </thead>
             <tbody>
@@ -191,11 +208,11 @@ export function Reports() {
                     (w) =>
                       `<tr>
                         <td>${escapeHtml(w.name)}</td>
-                        <td>${escapeHtml(w.caseNumber)}</td>
                         <td>${escapeHtml(w.offense)}</td>
-                        <td>${escapeHtml(getDisplayStatus(w))}</td>
+                        <td>${escapeHtml(w.caseNumber)}</td>
+                        <td>${escapeHtml(w.court)}</td>
                         <td>${escapeHtml(w.dateIssued)}</td>
-                        <td>${escapeHtml(w.assignedOfficer || 'Not assigned')}</td>
+                        <td>${escapeHtml(w.judge || 'N/A')}</td>
                       </tr>`,
                   )
                   .join('') || '<tr><td colspan="6">No records found for the selected criteria.</td></tr>'
@@ -230,12 +247,11 @@ export function Reports() {
         (w) => `
           <tr>
             <td>${escapeHtml(w.name)}</td>
-            <td>${escapeHtml(w.caseNumber)}</td>
             <td>${escapeHtml(w.offense)}</td>
-            <td>${escapeHtml(getDisplayStatus(w))}</td>
+            <td>${escapeHtml(w.caseNumber)}</td>
+            <td>${escapeHtml(w.court)}</td>
             <td>${escapeHtml(w.dateIssued)}</td>
-            <td>${escapeHtml(w.assignedOfficer || 'Not assigned')}</td>
-            ${reportType.includes('served') ? `<td>${escapeHtml(w.dateServed || 'N/A')}</td>` : ''}
+            <td>${escapeHtml(w.judge || 'N/A')}</td>
           </tr>`,
       )
       .join('');
@@ -250,19 +266,18 @@ export function Reports() {
         </head>
         <body>
           <table border="1">
-            <tr><th colspan="${reportType.includes('served') ? 7 : 6}">${escapeHtml(reportTitles[reportType])}</th></tr>
-            <tr><td colspan="${reportType.includes('served') ? 7 : 6}">${escapeHtml(settings.officeName)}</td></tr>
-            <tr><td colspan="${reportType.includes('served') ? 7 : 6}">Period: ${escapeHtml(startDate)} to ${escapeHtml(endDate)}</td></tr>
+            <tr><th colspan="6">${escapeHtml(reportTitles[reportType])}</th></tr>
+            <tr><td colspan="6">${escapeHtml(settings.officeName)}</td></tr>
+            <tr><td colspan="6">Period: ${escapeHtml(startDate)} to ${escapeHtml(endDate)}</td></tr>
             <tr>
               <th>Name</th>
-              <th>Case Number</th>
-              <th>Offense</th>
-              <th>Status</th>
+              <th>Law Violated/Offense</th>
+              <th>Criminal Case Number</th>
+              <th>Issuing Court</th>
               <th>Date Issued</th>
-              <th>Assigned Officer</th>
-              ${reportType.includes('served') ? '<th>Date Served</th>' : ''}
+              <th>Date Received</th>
             </tr>
-            ${tableRows || `<tr><td colspan="${reportType.includes('served') ? 7 : 6}">No records found for the selected criteria.</td></tr>`}
+            ${tableRows || `<tr><td colspan="6">No records found for the selected criteria.</td></tr>`}
           </table>
         </body>
       </html>
@@ -361,30 +376,22 @@ export function Reports() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
-                  <TableHead>Case Number</TableHead>
-                  <TableHead>Offense</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>Law Violated/Offense</TableHead>
+                  <TableHead>Criminal Case Number</TableHead>
+                  <TableHead>Issuing Court</TableHead>
                   <TableHead>Date Issued</TableHead>
-                  <TableHead>Assigned Officer</TableHead>
-                  {reportType.includes('served') && <TableHead>Date Served</TableHead>}
+                  <TableHead>Date Received</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredWarrants.map((warrant) => (
                   <TableRow key={warrant.id}>
                     <TableCell className="font-medium">{warrant.name}</TableCell>
-                    <TableCell>{warrant.caseNumber}</TableCell>
                     <TableCell>{warrant.offense}</TableCell>
-                    <TableCell>
-                      <Badge className={statusBadgeClass(getDisplayStatus(warrant))}>
-                        {getDisplayStatus(warrant)}
-                      </Badge>
-                    </TableCell>
+                    <TableCell>{warrant.caseNumber}</TableCell>
+                    <TableCell>{warrant.court}</TableCell>
                     <TableCell>{warrant.dateIssued}</TableCell>
-                    <TableCell>{warrant.assignedOfficer || 'Not assigned'}</TableCell>
-                    {reportType.includes('served') && (
-                      <TableCell>{warrant.dateServed || 'N/A'}</TableCell>
-                    )}
+                    <TableCell>{warrant.judge || 'N/A'}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
