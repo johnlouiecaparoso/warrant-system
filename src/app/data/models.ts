@@ -10,6 +10,7 @@ export interface Warrant {
   court: string;
   judge: string;
   dateIssued: string;
+  dateReceived?: string;
   barangay: string;
   address: string;
   assignedOfficer: string;

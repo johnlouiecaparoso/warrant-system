@@ -525,6 +525,10 @@ export function WarrantList() {
                     <Input type="date" value={editForm.dateIssued || ''} onChange={(e) => setEditForm((prev) => ({ ...prev, dateIssued: e.target.value }))} className="mt-1" />
                   </div>
                   <div>
+                    <Label>Date Received</Label>
+                    <Input type="date" value={editForm.dateReceived || ''} onChange={(e) => setEditForm((prev) => ({ ...prev, dateReceived: e.target.value }))} className="mt-1" />
+                  </div>
+                  <div>
                     <Label>Barangay</Label>
                     <Input value={editForm.barangay || ''} onChange={(e) => setEditForm((prev) => ({ ...prev, barangay: e.target.value }))} className="mt-1" />
                   </div>
@@ -579,6 +583,10 @@ export function WarrantList() {
                 <div>
                   <p className="text-sm text-gray-600">Date Issued</p>
                   <p className="font-medium">{selectedWarrant.dateIssued}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Date Received</p>
+                  <p className="font-medium">{selectedWarrant.dateReceived || 'N/A'}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-600">Status</p>

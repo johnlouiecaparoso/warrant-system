@@ -18,6 +18,7 @@ interface WarrantFormData {
   court: string;
   judge: string;
   dateIssued: string;
+  dateReceived?: string;
   barangay: string;
   address: string;
   assignedOfficer: string;
@@ -178,7 +179,7 @@ export function WarrantEncode() {
                   <Input
                     id="dateReceived"
                     type="date"
-                    {...register('judge')}
+                    {...register('dateReceived')}
                     placeholder="Date received"
                     className="mt-1"
                   />

@@ -38,6 +38,10 @@ const reportTitles = {
   cancelled: 'Cancelled Warrants Report',
 } as const;
 
+function getDateReceivedDisplay(dateReceived?: string) {
+  return dateReceived || 'N/A';
+}
+
 type ReportType = keyof typeof reportTitles;
 
 function escapeHtml(value: string) {
@@ -212,7 +216,7 @@ export function Reports() {
                         <td>${escapeHtml(w.caseNumber)}</td>
                         <td>${escapeHtml(w.court)}</td>
                         <td>${escapeHtml(w.dateIssued)}</td>
-                        <td>${escapeHtml(w.judge || 'N/A')}</td>
+                        <td>${escapeHtml(getDateReceivedDisplay(w.dateReceived))}</td>
                       </tr>`,
                   )
                   .join('') || '<tr><td colspan="6">No records found for the selected criteria.</td></tr>'
@@ -251,7 +255,7 @@ export function Reports() {
             <td>${escapeHtml(w.caseNumber)}</td>
             <td>${escapeHtml(w.court)}</td>
             <td>${escapeHtml(w.dateIssued)}</td>
-            <td>${escapeHtml(w.judge || 'N/A')}</td>
+            <td>${escapeHtml(getDateReceivedDisplay(w.dateReceived))}</td>
           </tr>`,
       )
       .join('');
@@ -391,7 +395,7 @@ export function Reports() {
                     <TableCell>{warrant.caseNumber}</TableCell>
                     <TableCell>{warrant.court}</TableCell>
                     <TableCell>{warrant.dateIssued}</TableCell>
-                    <TableCell>{warrant.judge || 'N/A'}</TableCell>
+                    <TableCell>{getDateReceivedDisplay(warrant.dateReceived)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

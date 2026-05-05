@@ -37,6 +37,7 @@ function toWarrantRow(warrant: Warrant) {
     court: nullable(warrant.court),
     judge: nullable(warrant.judge),
     dateIssued: warrant.dateIssued,
+    dateReceived: nullable(warrant.dateReceived),
     barangay: nullable(warrant.barangay),
     address: nullable(warrant.address),
     assignedOfficer: nullable(warrant.assignedOfficer),
@@ -72,6 +73,10 @@ function fromWarrantRow(row: Record<string, unknown>): Warrant {
     court: (row.court as string) || '',
     judge: (row.judge as string) || '',
     dateIssued: (row.dateIssued as string) || '',
+    dateReceived:
+      (row.dateReceived as string | undefined) ??
+      (row.date_received as string | undefined) ??
+      undefined,
     barangay: (row.barangay as string) || '',
     address: (row.address as string) || '',
     assignedOfficer: (row.assignedOfficer as string) || '',

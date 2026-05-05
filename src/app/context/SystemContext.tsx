@@ -156,6 +156,7 @@ function normalizeWarrant(warrant: Partial<Warrant>): Warrant {
     court: warrant.court || '',
     judge: warrant.judge || '',
     dateIssued: warrant.dateIssued || '',
+    dateReceived: warrant.dateReceived,
     barangay: warrant.barangay || '',
     address: warrant.address || '',
     assignedOfficer: warrant.assignedOfficer || '',
